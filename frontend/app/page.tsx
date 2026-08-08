@@ -26,6 +26,7 @@ export default function Home() {
   const [returnToStart, setReturnToStart] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   // Phase 2: the live agent activity.
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -41,17 +42,31 @@ export default function Home() {
   };
 
   const addStop = (lat: number, lng: number) => {
+    const id = `s${Date.now()}`;
     setStops((prev) => {
       const siteCount = prev.filter((s) => s.id !== "depot").length;
-      return [...prev, { id: `s${Date.now()}`, name: `Delivery site ${siteCount + 1}`, lat, lng }];
+      return [...prev, { id, name: `Delivery site ${siteCount + 1}`, lat, lng }];
     });
     clearRun();
+    setEditingId(id); // drop the new site straight into rename mode
   };
 
   const removeStop = (id: string) => {
     if (id === "depot") return;
     setStops((prev) => prev.filter((s) => s.id !== id));
     clearRun();
+  };
+
+  const renameStop = (id: string, name: string) => {
+    setStops((prev) => prev.map((s) => (s.id === id ? { ...s, name } : s)));
+  };
+
+  // Leaving the editor: fall back to a placeholder if the name was left blank.
+  const commitName = (id: string) => {
+    setStops((prev) =>
+      prev.map((s) => (s.id === id && !s.name.trim() ? { ...s, name: "Untitled site" } : s))
+    );
+    setEditingId(null);
   };
 
   const optimize = async () => {
@@ -177,7 +192,29 @@ export default function Home() {
                     {isDepot ? "H" : i + (displayStops[0]?.id === "depot" ? 0 : 1)}
                   </span>
                   <span className="name">
-                    {isDepot ? `${s.name} (base)` : s.name}
+                    {editingId === s.id ? (
+                      <input
+                        className="name-edit"
+                        autoFocus
+                        value={s.name}
+                        placeholder="Name this site"
+                        onChange={(e) => renameStop(s.id, e.target.value)}
+                        onFocus={(e) => e.currentTarget.select()}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === "Escape") commitName(s.id);
+                        }}
+                        onBlur={() => commitName(s.id)}
+                      />
+                    ) : (
+                      <button
+                        className="name-text"
+                        onClick={() => setEditingId(s.id)}
+                        title="Click to rename"
+                      >
+                        {isDepot ? `${s.name} (base)` : s.name}
+                        <span className="edit-hint">✎</span>
+                      </button>
+                    )}
                     {meta.length > 0 && <div className="meta">{meta.join(" · ")}</div>}
                   </span>
                   {!isDepot && (
