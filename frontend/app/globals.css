@@ -1,0 +1,306 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap");
+
+/* RouteMind design tokens: a night dispatch console around a bright map. */
+:root {
+  --font-inter: "Inter", system-ui, -apple-system, sans-serif;
+  --font-grotesk: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --ink: #0c1220;
+  --panel: #141c2e;
+  --panel-2: #1b2540;
+  --line: #263252;
+  --text: #e7ecf6;
+  --muted: #8b96ad;
+  --amber: #f6a821;
+  --amber-soft: #3a2f16;
+  --teal: #35d6b0;
+  --teal-soft: #16332c;
+  --danger: #ff6b6b;
+  --radius: 12px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--font-inter), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand .dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 0 4px var(--amber-soft);
+}
+
+.brand h1 {
+  font-family: var(--font-grotesk), system-ui, sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  margin: 0;
+}
+
+.brand .tag {
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: 4px;
+}
+
+.phase-pill {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  color: var(--teal);
+  background: var(--teal-soft);
+  border: 1px solid #23514a;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.map-wrap { flex: 1; position: relative; min-width: 0; }
+
+.hint {
+  position: absolute;
+  z-index: 500;
+  left: 16px;
+  bottom: 16px;
+  background: rgba(12, 18, 32, 0.85);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+}
+
+.panel {
+  width: 372px;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.panel section { padding: 18px 20px; border-bottom: 1px solid var(--line); }
+.panel h2 {
+  font-family: var(--font-grotesk), system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+
+.stop-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.badge {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--amber);
+}
+.badge.depot { background: var(--teal); border-radius: 50%; }
+
+.stop-row .name { flex: 1; font-size: 14px; }
+.stop-row .meta { font-size: 12px; color: var(--muted); }
+
+.remove {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px;
+}
+.remove:hover { color: var(--danger); }
+
+.row { display: flex; gap: 10px; align-items: center; }
+.row + .row { margin-top: 12px; }
+
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.check input { accent-color: var(--amber); width: 16px; height: 16px; }
+
+button.primary {
+  width: 100%;
+  border: none;
+  border-radius: var(--radius);
+  padding: 13px;
+  font-family: var(--font-grotesk), system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--amber);
+  cursor: pointer;
+  transition: transform 0.06s ease, filter 0.15s ease;
+}
+button.primary:hover { filter: brightness(1.05); }
+button.primary:active { transform: translateY(1px); }
+button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+button.ghost {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  padding: 9px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+button.ghost:hover { color: var(--text); border-color: #35456e; }
+
+.stats { display: flex; gap: 10px; }
+.stat {
+  flex: 1;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+.stat .num {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+}
+.stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-top: 2px; }
+
+.rule {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--amber-soft);
+  border: 1px solid #4a3c1c;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-top: 8px;
+}
+.rule .mark { color: var(--amber); }
+
+.empty { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+input.text {
+  flex: 1;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 14px;
+}
+input.text:focus { outline: none; border-color: var(--amber); }
+
+/* Phase 2: the live agent activity panel */
+.agent-row {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  position: relative;
+}
+.agent-row:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 22px;
+  bottom: -4px;
+  width: 2px;
+  background: var(--line);
+}
+.agent-dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--line);
+  z-index: 1;
+}
+.agent-row.done .agent-dot { background: var(--teal); box-shadow: 0 0 0 3px var(--teal-soft); }
+.agent-row.running .agent-dot { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-soft); animation: pulse 1s ease-in-out infinite; }
+.agent-row.pending { opacity: 0.45; }
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.35); }
+}
+
+.agent-body { flex: 1; min-width: 0; }
+.agent-head { display: flex; align-items: baseline; gap: 8px; }
+.agent-name {
+  font-family: var(--font-grotesk), system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.agent-role { font-size: 11px; color: var(--muted); }
+.agent-msg { font-size: 13px; color: var(--muted); line-height: 1.5; margin-top: 3px; }
+.agent-msg.working { color: var(--amber); font-style: italic; }
+
+/* Numbered map markers built with Leaflet divIcon */
+.pin {
+  width: 30px;
+  height: 30px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(12, 18, 32, 0.4);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
+}
+.pin span {
+  transform: rotate(45deg);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--ink);
+}
+.pin.amber { background: var(--amber); }
+.pin.teal { background: var(--teal); border-radius: 50%; }
+.pin.teal span { transform: none; }

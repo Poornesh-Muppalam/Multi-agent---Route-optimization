@@ -1,0 +1,50 @@
+export interface Stop {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  service_min?: number;
+  window?: [number, number] | null;
+}
+
+export interface Leg {
+  from: string;
+  to: string;
+  distance_m: number;
+  time_min: number;
+}
+
+export interface RouteResult {
+  ok: boolean;
+  reason?: string;
+  order?: number[];
+  ordered_stop_ids?: string[];
+  legs?: Leg[];
+  total_distance_m?: number;
+  total_time_min?: number;
+  arrivals_min?: number[];
+  binding_rules?: string[];
+  returned_to_start?: boolean;
+}
+
+// Phase 2: the agent crew.
+export interface AgentInfo {
+  id: string;
+  label: string;
+  role: string;
+}
+
+// Events streamed from /optimize/agents/stream over Server-Sent Events.
+export type AgentEvent =
+  | { type: "pipeline"; agents: AgentInfo[]; model: string; live: boolean }
+  | {
+      type: "agent";
+      agent: string;
+      label: string;
+      role: string;
+      status: "done";
+      message: string;
+    }
+  | { type: "result"; result: RouteResult }
+  | { type: "done" }
+  | { type: "error"; message: string };
