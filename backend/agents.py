@@ -122,20 +122,21 @@ async def _pause_if_templated() -> None:
 # The agents.
 # ---------------------------------------------------------------------------
 async def planner(state: State) -> dict:
-    n = len(state["stops"])
+    sites = max(len(state["stops"]) - 1, 0)
     rules = _window_rules(state["stops"])
     plan = await _llm(
-        "You are the Planner in a route-optimization crew. In ONE short "
-        "sentence, state the plan for turning these stops into an optimized "
-        "driving route. Do not do any math or invent numbers.",
-        f"There are {n} stops. Time rules: {rules or 'none'}. "
-        f"Return to depot: {state['return_to_start']}.",
+        "You are the Planner in a food-bank delivery crew. In ONE short "
+        "sentence, state the plan for turning these delivery sites into the "
+        "shortest van run. Do not do any math or invent numbers.",
+        f"There are {sites} delivery sites. Serving windows: {rules or 'none'}. "
+        f"Return to the food bank: {state['return_to_start']}.",
     )
     if plan is None:
-        rule_note = f" while honoring {len(rules)} timing rule(s)" if rules else ""
+        rule_note = f" while hitting {len(rules)} serving window(s)" if rules else ""
         plan = (
-            f"Plan: gather the {n} stops, apply any rules, hand them to the "
-            f"solver, and explain the shortest valid order{rule_note}."
+            f"Plan: gather the {sites} delivery sites, apply the serving "
+            f"windows, hand them to the solver, and explain the shortest "
+            f"run{rule_note}."
         )
         await _pause_if_templated()
     return {"plan": plan}
@@ -143,18 +144,19 @@ async def planner(state: State) -> dict:
 
 async def data_agent(state: State) -> dict:
     stops = state["stops"]
-    depot = stops[0]["name"] if stops else "depot"
+    base = stops[0]["name"] if stops else "the food bank"
+    sites = max(len(stops) - 1, 0)
     windowed = sum(1 for s in stops if s.get("window"))
     summary = await _llm(
-        "You are the Data agent. In ONE short sentence, confirm the stops are "
-        "ready for routing. Be concrete and do not invent details.",
-        f"{len(stops)} stops, starting from '{depot}'. "
-        f"{windowed} of them have a time window.",
+        "You are the Data agent. In ONE short sentence, confirm the delivery "
+        "sites are ready for routing. Be concrete and do not invent details.",
+        f"{sites} delivery sites, starting from '{base}' (the base). "
+        f"{windowed} of them have a serving window.",
     )
     if summary is None:
         summary = (
-            f"Loaded {len(stops)} stops starting from {depot}"
-            + (f", {windowed} with a time window." if windowed else ".")
+            f"Loaded {sites} delivery sites from base {base}"
+            + (f", {windowed} with a serving window." if windowed else ".")
         )
         await _pause_if_templated()
     return {"data_summary": summary}
@@ -163,16 +165,16 @@ async def data_agent(state: State) -> dict:
 async def conditions(state: State) -> dict:
     rules = _window_rules(state["stops"])
     text = await _llm(
-        "You are the Conditions agent. Restate the timing rules in ONE short, "
-        "friendly sentence. If there are none, say there are no timing rules. "
-        "Do not invent times.",
-        f"Timing rules: {rules or 'none'}.",
+        "You are the Conditions agent. Restate the serving-window rules in ONE "
+        "short, friendly sentence. If there are none, say there are no serving "
+        "windows. Do not invent times.",
+        f"Serving windows: {rules or 'none'}.",
     )
     if text is None:
         text = (
-            "No timing rules to enforce."
+            "No serving windows to hit."
             if not rules
-            else "Enforcing: " + "; ".join(rules) + "."
+            else "Serving windows to hit: " + "; ".join(rules) + "."
         )
         await _pause_if_templated()
     return {"window_rules": rules, "condition_text": text}
@@ -194,7 +196,7 @@ async def optimizer(state: State) -> dict:
         km = round(result.get("total_distance_m", 0) / 1000, 1)
         mins = result.get("total_time_min", 0)
         summary = (
-            f"Best order: {' -> '.join(order)}. "
+            f"Best run: {' -> '.join(order)}. "
             f"{km} km, about {mins} min of driving."
         )
     return {"result": result, "optimize_summary": summary}
@@ -204,15 +206,15 @@ async def explainer(state: State) -> dict:
     result = state.get("result", {})
     if not result.get("ok"):
         text = await _llm(
-            "You are the Explainer. In ONE short, kind sentence, tell a "
-            "non-technical user the route could not be solved and suggest "
-            "widening a time window or removing a stop.",
+            "You are the Explainer. In ONE short, kind sentence, tell the "
+            "driver the run could not be planned and suggest widening a serving "
+            "window or dropping a site.",
             f"Reason: {result.get('reason', 'unknown')}.",
         )
         if text is None:
             text = (
-                "No valid route fits every rule. Try widening a time window "
-                "or removing a stop."
+                "No run fits every serving window. Try widening a window or "
+                "dropping a site."
             )
             await _pause_if_templated()
         return {"explanation": text}
@@ -221,20 +223,20 @@ async def explainer(state: State) -> dict:
     mins = result.get("total_time_min", 0)
     rules = state.get("window_rules", [])
     text = await _llm(
-        "You are the Explainer. In 1-2 short sentences, explain the optimized "
-        "route to a non-technical user: the total distance and drive time, and "
-        "why the order respects any timing rules. Use ONLY the numbers given; "
-        "do not invent any.",
+        "You are the Explainer. In 1-2 short sentences, explain the delivery "
+        "run to a non-technical driver: the total distance and drive time, and "
+        "why the order reaches each site inside its serving window. Use ONLY "
+        "the numbers given; do not invent any.",
         f"Total distance: {km} km. Drive time: {mins} min. "
-        f"Timing rules respected: {rules or 'none'}.",
+        f"Serving windows met: {rules or 'none'}.",
     )
     if text is None:
         rule_note = (
-            f" The order was arranged so that {rules[0]}." if rules else ""
+            f" The order was arranged so the van reaches {rules[0]}." if rules else ""
         )
         text = (
-            f"The optimized route covers {km} km in about {mins} minutes of "
-            f"driving.{rule_note}"
+            f"The run covers {km} km in about {mins} minutes of driving."
+            f"{rule_note}"
         )
         await _pause_if_templated()
     return {"explanation": text}
@@ -263,10 +265,10 @@ def build_graph():
 # message. The frontend uses the labels/roles; the streamer uses the keys.
 NODE_META = {
     "planner": {"label": "Planner", "role": "Sets the plan", "key": "plan"},
-    "data": {"label": "Data", "role": "Prepares the stops", "key": "data_summary"},
+    "data": {"label": "Data", "role": "Prepares the sites", "key": "data_summary"},
     "conditions": {
         "label": "Conditions",
-        "role": "Reads the rules",
+        "role": "Reads serving windows",
         "key": "condition_text",
     },
     "optimizer": {
@@ -276,7 +278,7 @@ NODE_META = {
     },
     "explainer": {
         "label": "Explainer",
-        "role": "Explains the route",
+        "role": "Explains the run",
         "key": "explanation",
     },
 }

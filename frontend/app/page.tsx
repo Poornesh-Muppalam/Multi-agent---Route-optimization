@@ -8,12 +8,16 @@ import { optimizeRoute, streamAgents } from "./lib/api";
 // Leaflet touches the browser window, so the map only loads on the client.
 const MapView = dynamic(() => import("./components/MapView"), { ssr: false });
 
+// A real morning for a food-bank van: it leaves the warehouse and drops meals
+// and groceries at community sites, several of which can only receive during a
+// set serving window (a senior lunch, a morning shelter service, an
+// after-school pantry). service_min is how long unloading takes on site.
 const SEED_STOPS: Stop[] = [
-  { id: "depot", name: "Depot", lat: 37.3382, lng: -121.8863 },
-  { id: "s1", name: "Pharmacy", lat: 37.3541, lng: -121.9552, window: [540, 660] },
-  { id: "s2", name: "Cafe", lat: 37.323, lng: -121.943 },
-  { id: "s3", name: "Office", lat: 37.3688, lng: -121.911 },
-  { id: "s4", name: "School", lat: 37.302, lng: -121.848 },
+  { id: "depot", name: "Community Food Bank", lat: 37.3382, lng: -121.8863 },
+  { id: "s1", name: "Sunrise Senior Center", lat: 37.3541, lng: -121.9552, service_min: 15, window: [660, 750] }, // lunch 11:00–12:30
+  { id: "s2", name: "Westside Family Shelter", lat: 37.323, lng: -121.943, service_min: 20, window: [540, 630] }, // morning 9:00–10:30
+  { id: "s3", name: "Alum Rock Community Pantry", lat: 37.3688, lng: -121.911, service_min: 15 }, // any time
+  { id: "s4", name: "Seven Trees After-School Pantry", lat: 37.302, lng: -121.848, service_min: 20, window: [870, 960] }, // 2:30–4:00 pm
 ];
 
 export default function Home() {
@@ -38,8 +42,8 @@ export default function Home() {
 
   const addStop = (lat: number, lng: number) => {
     setStops((prev) => {
-      const n = prev.length;
-      return [...prev, { id: `s${Date.now()}`, name: `Stop ${n}`, lat, lng }];
+      const siteCount = prev.filter((s) => s.id !== "depot").length;
+      return [...prev, { id: `s${Date.now()}`, name: `Delivery site ${siteCount + 1}`, lat, lng }];
     });
     clearRun();
   };
@@ -110,6 +114,19 @@ export default function Home() {
     return stops;
   }, [route, stops]);
 
+  // The estimated arrival time at each site, once solved — this is the run sheet.
+  const etaById = useMemo(() => {
+    const m = new Map<string, number>();
+    if (route?.ok && route.ordered_stop_ids && route.arrivals_min) {
+      route.ordered_stop_ids.forEach((id, i) => {
+        const a = route.arrivals_min![i];
+        if (typeof a === "number") m.set(id, a);
+      });
+    }
+    return m;
+  }, [route]);
+
+  const siteCount = stops.filter((s) => s.id !== "depot").length;
   const km = route?.total_distance_m ? (route.total_distance_m / 1000).toFixed(1) : "0";
 
   return (
@@ -118,7 +135,7 @@ export default function Home() {
         <div className="brand">
           <span className="dot" />
           <h1>RouteMind</h1>
-          <span className="tag">agentic route planner</span>
+          <span className="tag">food-bank delivery routing</span>
         </div>
         <span className="phase-pill">phase 2 · agents + solver</span>
       </header>
@@ -131,30 +148,46 @@ export default function Home() {
             returnedToStart={route?.returned_to_start}
             onAdd={addStop}
           />
-          <div className="hint">Click anywhere on the map to add a stop.</div>
+          <div className="hint">Click the map to add a delivery site.</div>
         </div>
 
         <aside className="panel">
           <section>
-            <h2>Stops ({stops.length})</h2>
-            {displayStops.map((s, i) => (
-              <div className="stop-row" key={s.id}>
-                <span className={`badge ${i === 0 && s.id === "depot" ? "depot" : ""}`}>
-                  {s.id === "depot" ? "H" : i + (displayStops[0]?.id === "depot" ? 0 : 1)}
-                </span>
-                <span className="name">
-                  {s.name}
-                  {s.window && (
-                    <span className="meta"> · window {fmtClock(s.window[0])}–{fmtClock(s.window[1])}</span>
+            <h2>Community Food Bank</h2>
+            <p className="empty">
+              Today's van run — meals and groceries out to {siteCount} community{" "}
+              {siteCount === 1 ? "site" : "sites"}, several with a serving window that must be met.
+              The agents build the shortest run that still hits every window, then hand the driver
+              the run sheet below.
+            </p>
+          </section>
+
+          <section>
+            <h2>{route?.ok ? "Run sheet" : "Delivery sites"} ({siteCount})</h2>
+            {displayStops.map((s, i) => {
+              const isDepot = s.id === "depot";
+              const eta = etaById.get(s.id);
+              const meta: string[] = [];
+              if (s.window) meta.push(`window ${fmtClock(s.window[0])}–${fmtClock(s.window[1])}`);
+              if (!isDepot && s.service_min) meta.push(`${s.service_min} min drop`);
+              if (!isDepot && typeof eta === "number") meta.push(`ETA ${fmtClock(eta)}`);
+              return (
+                <div className="stop-row" key={s.id}>
+                  <span className={`badge ${isDepot ? "depot" : ""}`}>
+                    {isDepot ? "H" : i + (displayStops[0]?.id === "depot" ? 0 : 1)}
+                  </span>
+                  <span className="name">
+                    {isDepot ? `${s.name} (base)` : s.name}
+                    {meta.length > 0 && <div className="meta">{meta.join(" · ")}</div>}
+                  </span>
+                  {!isDepot && (
+                    <button className="remove" onClick={() => removeStop(s.id)} aria-label={`Remove ${s.name}`}>
+                      ×
+                    </button>
                   )}
-                </span>
-                {s.id !== "depot" && (
-                  <button className="remove" onClick={() => removeStop(s.id)} aria-label={`Remove ${s.name}`}>
-                    ×
-                  </button>
-                )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </section>
 
           <section>
@@ -164,7 +197,7 @@ export default function Home() {
                 checked={returnToStart}
                 onChange={(e) => setReturnToStart(e.target.checked)}
               />
-              Return to the depot at the end
+              Return to the food bank at the end
             </label>
             <button
               className="primary"
@@ -239,8 +272,9 @@ export default function Home() {
             )}
             {!route && !error && (
               <p className="empty">
-                Add or remove stops, then hit Optimize. The solver returns the shortest
-                order that still respects every rule, and draws it on the map.
+                Add or remove delivery sites, then hit Optimize with agents. You'll get the
+                shortest van run that still reaches every site inside its serving window —
+                drawn on the map, with an arrival time (ETA) for each stop.
               </p>
             )}
           </section>

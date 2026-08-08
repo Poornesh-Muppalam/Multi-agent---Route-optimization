@@ -6,6 +6,14 @@ Built for the people who actually plan routes by hand today: a local courier, a 
 
 ![RouteMind architecture](docs/architecture.svg)
 
+## Who this is for, and the demo scenario
+
+The app ships centered on one concrete operator so the value is obvious: **a community food bank running a delivery van**. A driver leaves the warehouse each morning and drops meals and groceries at community sites — a senior center's lunch, a family shelter's morning service, an after-school pantry — and several of those sites can only receive during a fixed serving window. Get there late and the meal is missed.
+
+That is exactly the problem a solver is good at and a person is not: order a day of stops so every hard time window is met while the total drive stays short. The built-in scenario has four San Jose delivery sites (three with serving windows) plus the food-bank base.
+
+**The deliverable is a run sheet.** Hit *Optimize with agents* and RouteMind returns the driver's actual work order: which site to visit in what order, the estimated arrival time (ETA) at each one, the total distance and drive time, and which serving windows forced the order — with the agents narrating each step as they build it. The same design serves the florist, the repair tech, and the courier; only the stops and the windows change.
+
 ## Why it is built this way
 
 The interesting design decision is what does the thinking. The AI agents handle the language, the coordination, and the plain English explanations. The actual route math is done by Google OR-Tools, a real optimization solver, not by a language model. Letting a language model do routing arithmetic would be slow and unreliable. Knowing when to use an AI model and when to use a proper solver is the whole point of the architecture, and it keeps the answers fast and trustworthy.
