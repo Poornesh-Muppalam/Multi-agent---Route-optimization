@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import type { Stop, RouteResult, AgentInfo } from "./lib/types";
-import { optimizeRoute, streamAgents } from "./lib/api";
+import type { Stop, RouteResult, AgentInfo, ChatMessage, ChatDelta } from "./lib/types";
+import { optimizeRoute, streamAgents, sendChat } from "./lib/api";
 
 // Leaflet touches the browser window, so the map only loads on the client.
 const MapView = dynamic(() => import("./components/MapView"), { ssr: false });
@@ -149,6 +149,46 @@ export default function Home() {
     setAgents([]);
   };
 
+  // Phase 3: the chat.
+  const [chatLog, setChatLog] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatLog, chatBusy]);
+
+  const sendChatMessage = async (preset?: string) => {
+    const msg = (preset ?? chatInput).trim();
+    if (!msg || chatBusy) return;
+    setChatInput("");
+    setEditingId(null);
+    setChatLog((l) => [...l, { role: "user", text: msg }]);
+    setChatBusy(true);
+    try {
+      const res = await sendChat(stops, returnToStart, msg);
+      if (res.ok && res.stops) {
+        setStops(res.stops);
+        if (typeof res.return_to_start === "boolean") setReturnToStart(res.return_to_start);
+        if (res.result) setRoute(res.result);
+        setError(null);
+        setWarning(null);
+      }
+      setChatLog((l) => [
+        ...l,
+        { role: "assistant", text: res.reply, delta: res.delta, ok: res.ok },
+      ]);
+    } catch {
+      setChatLog((l) => [
+        ...l,
+        { role: "assistant", text: "Couldn't reach the backend on port 8000.", ok: false },
+      ]);
+    } finally {
+      setChatBusy(false);
+    }
+  };
+
   // The first agent that hasn't reported yet is the one currently working.
   const runningAgent = agentsBusy
     ? agents.find((a) => !(a.id in agentMsgs))?.id ?? null
@@ -188,7 +228,7 @@ export default function Home() {
           <h1>RouteMind</h1>
           <span className="tag">food-bank delivery routing</span>
         </div>
-        <span className="phase-pill">phase 2 · agents + solver</span>
+        <span className="phase-pill">phase 3 · chat + agents</span>
       </header>
 
       <div className="body">
@@ -298,6 +338,62 @@ export default function Home() {
             </div>
           </section>
 
+          <section>
+            <h2>Change the run</h2>
+            <div className="chat-log">
+              {chatLog.length === 0 && (
+                <p className="empty">
+                  Tell me a change in plain English and I'll re-plan the run and say what it cost —
+                  e.g. "drop the senior center", "move the shelter to 8 to 9 am", "put Seven Trees last".
+                </p>
+              )}
+              {chatLog.map((m, i) => (
+                <div
+                  key={i}
+                  className={`bubble ${m.role}${m.ok === false ? " bad" : ""}`}
+                >
+                  {m.text}
+                  {m.delta && (m.delta.distance_km !== 0 || m.delta.time_min !== 0) && (
+                    <div className="delta">{fmtDelta(m.delta)}</div>
+                  )}
+                </div>
+              ))}
+              {chatBusy && <div className="bubble assistant typing">re-planning…</div>}
+              <div ref={chatEndRef} />
+            </div>
+            <div className="row" style={{ marginTop: 10 }}>
+              <input
+                className="text"
+                value={chatInput}
+                placeholder="e.g. put Seven Trees last"
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") sendChatMessage();
+                }}
+                disabled={chatBusy}
+              />
+              <button
+                className="ghost"
+                onClick={() => sendChatMessage()}
+                disabled={chatBusy || !chatInput.trim()}
+              >
+                Send
+              </button>
+            </div>
+            <div className="chips">
+              {[
+                "drop the senior center",
+                "put Seven Trees last",
+                "move the shelter to 8 to 9 am",
+                "don't return to the food bank",
+              ].map((s) => (
+                <button key={s} className="chip" onClick={() => sendChatMessage(s)} disabled={chatBusy}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          </section>
+
           {agents.length > 0 && (
             <section>
               <h2>
@@ -374,4 +470,9 @@ function fmtClock(minutes: number): string {
   const suffix = h < 12 ? "am" : "pm";
   h = h % 12 || 12;
   return `${h}:${m.toString().padStart(2, "0")} ${suffix}`;
+}
+
+function fmtDelta(d: ChatDelta): string {
+  const sign = (v: number) => (v > 0 ? `+${v}` : `${v}`);
+  return `${sign(d.distance_km)} km · ${sign(d.time_min)} min vs before`;
 }

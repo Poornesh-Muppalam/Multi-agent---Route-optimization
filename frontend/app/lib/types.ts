@@ -34,6 +34,32 @@ export interface AgentInfo {
   role: string;
 }
 
+// Phase 3: the chat.
+export interface ChatDelta {
+  distance_km: number;
+  time_min: number;
+}
+
+// Response from POST /chat.
+export interface ChatResponse {
+  ok: boolean;
+  kind: string;
+  summary?: string;
+  reply: string;
+  delta?: ChatDelta;
+  stops?: Stop[];
+  return_to_start?: boolean;
+  result?: RouteResult;
+}
+
+// A message in the on-screen chat log.
+export interface ChatMessage {
+  role: "user" | "assistant";
+  text: string;
+  delta?: ChatDelta;
+  ok?: boolean;
+}
+
 // Events streamed from /optimize/agents/stream over Server-Sent Events.
 export type AgentEvent =
   | { type: "pipeline"; agents: AgentInfo[]; model: string; live: boolean }

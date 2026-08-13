@@ -20,6 +20,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from agents import run_agents, stream_agents
+from chat import chat_turn
 from solver import solve_route
 
 app = FastAPI(title="RouteMind API", version="0.2.0")
@@ -51,9 +52,13 @@ class OptimizeRequest(BaseModel):
     speed_kmph: float = 30.0
 
 
+class ChatRequest(OptimizeRequest):
+    message: str
+
+
 @app.get("/")
 def health():
-    return {"status": "ok", "service": "RouteMind API", "phase": 2}
+    return {"status": "ok", "service": "RouteMind API", "phase": 3}
 
 
 @app.post("/optimize")
@@ -96,3 +101,11 @@ async def optimize_agents_stream(req: OptimizeRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.post("/chat")
+async def chat(req: ChatRequest):
+    """Phase 3: interpret a plain-English change to the run, apply it, re-solve,
+    and explain what changed and what it cost."""
+    stops = [stop.model_dump() for stop in req.stops]
+    return await chat_turn(req.message, stops, req.return_to_start, req.speed_kmph)

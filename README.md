@@ -27,6 +27,7 @@ So RouteMind is an honest hybrid: agents for language, a solver for math, and a 
 - Set a time window rule on a stop (for example, the pharmacy must be reached between 9 and 11 am).
 - Hit **Solver only** and watch the shortest valid order get drawn on the map.
 - Hit **Optimize with agents** and watch the five-agent crew work step by step in a live activity panel, then draw the same optimized route with a plain-English explanation.
+- Type a change in plain English ("drop the senior center", "put the shelter first") and watch the run re-plan, with RouteMind explaining what changed and what it cost.
 - Read the total distance, the drive time, and which rules were binding.
 
 ### The agent crew (Phase 2)
@@ -48,13 +49,30 @@ Backend endpoints added in Phase 2:
 - `POST /optimize/agents` — run the whole crew once, return the final state.
 - `POST /optimize/agents/stream` — stream each agent's step live (SSE).
 
+### The chat (Phase 3)
+
+Type a plain-English change to the run in the **Change the run** box and RouteMind interprets it, re-plans, and tells you what it cost:
+
+- "drop the senior center" — remove a site.
+- "move the shelter to 8 to 9 am" — set or change a serving window.
+- "the shelter needs 30 minutes to unload" — set a site's drop time.
+- "put Seven Trees last" / "put the shelter first" — pin a site's position (honoured as a hard ordering constraint by OR-Tools).
+- "don't return to the food bank" — one-way run.
+- "re-optimize" — just re-run.
+
+Each reply says what changed and the distance/drive-time delta versus the previous run. If a change can't be met — e.g. forcing a windowed site out of its window — RouteMind says so and leaves the run unchanged. Interpretation uses the fast Claude model when a key is present, with a rule-based fallback so the chat still works without one. As always, the language model only decides *what* to change; OR-Tools does the routing.
+
+Backend endpoint added in Phase 3:
+
+- `POST /chat` — interpret a change, apply it, re-solve, and return the new run plus an explanation and cost delta.
+
 ## Build phases
 
 Phase 1 is complete and runnable. The later phases layer on top of this same foundation.
 
 - [x] Phase 1: the map and the solver. Add stops, respect time window rules, draw the optimized route.
 - [x] Phase 2: the agents. LangGraph plus a fast language model coordinate the planner, data, conditions, optimizer, and explainer agents, and stream their steps into a live activity panel.
-- [ ] Phase 3: the chat. Say "put the school last" or "avoid the toll road" and watch the route redraw, with the explainer telling you what changed and what it cost.
+- [x] Phase 3: the chat. Say "put the shelter first" or "drop the senior center" and watch the run redraw, with the explainer telling you what changed and what it cost.
 - [ ] Phase 4: learning and unlearning. A small model learns real travel and service times from past trips, and an unlearning agent removes a single customer's influence from that model on request, so the system stays privacy compliant when someone exercises their right to be forgotten.
 
 ## Tech stack

@@ -55,6 +55,7 @@ def solve_route(
     return_to_start: bool = True,
     speed_kmph: float = 30.0,
     time_limit_seconds: int = 5,
+    pins: Optional[List[dict]] = None,
 ) -> dict:
     """Find the best order to visit every stop, starting from the first one.
 
@@ -63,6 +64,11 @@ def solve_route(
         optional window of [earliest_min, latest_min] measured from the start
         of the day, which the route must respect.
     return_to_start: whether the driver comes back to the first stop.
+    pins: optional list of {"node": index, "pos": "first"|"last"} that force a
+        delivery site to be visited first or last among the deliveries. Used by
+        the Phase 3 chat ("put the shelter first"). Honoured as a hard ordering
+        constraint, so an impossible pin (against a time window) makes the run
+        unsolvable, which the caller surfaces to the user.
 
     Returns a plain dict that the API hands straight to the frontend.
     """
@@ -84,6 +90,7 @@ def solve_route(
     time_matrix = build_time_matrix(stops, speed_kmph)
 
     has_windows = any(stop.get("window") for stop in stops)
+    has_pins = bool(pins)
 
     depot = 0
     manager = pywrapcp.RoutingIndexManager(n, 1, depot)
@@ -101,7 +108,8 @@ def solve_route(
 
     binding_rules: List[str] = []
 
-    if has_windows:
+    # A Time dimension is needed for time windows and/or ordering pins.
+    if has_windows or has_pins:
         horizon = 24 * 3600
         routing.AddDimension(
             transit_idx,
@@ -111,18 +119,40 @@ def solve_route(
             "Time",
         )
         time_dim = routing.GetDimensionOrDie("Time")
-        for node, stop in enumerate(stops):
-            window = stop.get("window")
-            if not window:
-                continue
-            earliest = int(round(window[0] * 60))
-            latest = int(round(window[1] * 60))
-            index = manager.NodeToIndex(node)
-            time_dim.CumulVar(index).SetRange(earliest, latest)
-            binding_rules.append(
-                f"{stop['name']} must be reached between "
-                f"{_fmt(window[0])} and {_fmt(window[1])}."
-            )
+
+        if has_windows:
+            for node, stop in enumerate(stops):
+                window = stop.get("window")
+                if not window:
+                    continue
+                earliest = int(round(window[0] * 60))
+                latest = int(round(window[1] * 60))
+                index = manager.NodeToIndex(node)
+                time_dim.CumulVar(index).SetRange(earliest, latest)
+                binding_rules.append(
+                    f"{stop['name']} must be reached between "
+                    f"{_fmt(window[0])} and {_fmt(window[1])}."
+                )
+
+        if has_pins:
+            # Force a site first/last by constraining its arrival time relative
+            # to every other delivery, using the Time dimension's cumul vars.
+            solver = routing.solver()
+            delivery_nodes = [node for node in range(n) if node != depot]
+            for pin in pins:
+                pinned = manager.NodeToIndex(pin["node"])
+                for other in delivery_nodes:
+                    if other == pin["node"]:
+                        continue
+                    other_idx = manager.NodeToIndex(other)
+                    if pin["pos"] == "first":
+                        solver.Add(time_dim.CumulVar(pinned) <= time_dim.CumulVar(other_idx))
+                    else:  # "last"
+                        solver.Add(time_dim.CumulVar(pinned) >= time_dim.CumulVar(other_idx))
+                binding_rules.append(
+                    f"{stops[pin['node']]['name']} is pinned to be visited "
+                    f"{pin['pos']}."
+                )
 
     search = pywrapcp.DefaultRoutingSearchParameters()
     search.first_solution_strategy = (

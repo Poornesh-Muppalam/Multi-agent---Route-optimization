@@ -1,4 +1,4 @@
-import type { Stop, RouteResult, AgentEvent } from "./types";
+import type { Stop, RouteResult, AgentEvent, ChatResponse } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
 
@@ -56,4 +56,22 @@ export async function streamAgents(
       }
     }
   }
+}
+
+// Phase 3: send a plain-English change to the run and get back the applied
+// edit, the re-solved route, and an explanation of what it cost.
+export async function sendChat(
+  stops: Stop[],
+  returnToStart: boolean,
+  message: string
+): Promise<ChatResponse> {
+  const res = await fetch(`${BASE}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ stops, return_to_start: returnToStart, message }),
+  });
+  if (!res.ok) {
+    throw new Error(`Backend responded with ${res.status}`);
+  }
+  return res.json();
 }

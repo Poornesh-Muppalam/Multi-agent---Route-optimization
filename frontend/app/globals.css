@@ -308,6 +308,62 @@ input.text {
 }
 input.text:focus { outline: none; border-color: var(--amber); }
 
+/* Phase 3: the chat */
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.bubble {
+  max-width: 85%;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 9px 12px;
+  border-radius: 12px;
+}
+.bubble.user {
+  align-self: flex-end;
+  background: var(--amber);
+  color: var(--ink);
+  border-bottom-right-radius: 4px;
+}
+.bubble.assistant {
+  align-self: flex-start;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-bottom-left-radius: 4px;
+}
+.bubble.assistant.bad {
+  background: rgba(59, 20, 20, 0.6);
+  border-color: #7a2e2e;
+  color: #ffd9d9;
+}
+.bubble.typing { color: var(--muted); font-style: italic; }
+.bubble .delta {
+  margin-top: 5px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  color: var(--teal);
+}
+.bubble.user .delta { color: var(--ink); opacity: 0.7; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.chip:hover { color: var(--text); border-color: var(--amber); }
+.chip:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* Phase 2: the live agent activity panel */
 .agent-row {
   display: flex;
