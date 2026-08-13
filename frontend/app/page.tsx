@@ -1,12 +1,28 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import type { Stop, RouteResult, AgentInfo } from "./lib/types";
 import { optimizeRoute, streamAgents } from "./lib/api";
 
 // Leaflet touches the browser window, so the map only loads on the client.
 const MapView = dynamic(() => import("./components/MapView"), { ssr: false });
+
+// RouteMind currently serves Northern California — the SF Bay Area and out to
+// roughly 130 miles of the food-bank base. Clicks beyond this are refused.
+const SERVICE_RADIUS_MILES = 130;
+const SERVICE_RADIUS_METERS = SERVICE_RADIUS_MILES * 1609.344;
+
+// Great-circle distance in miles, for the service-area check.
+function milesBetween(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 3958.8;
+  const dLat = ((bLat - aLat) * Math.PI) / 180;
+  const dLng = ((bLng - aLng) * Math.PI) / 180;
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((aLat * Math.PI) / 180) * Math.cos((bLat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
 
 // A real morning for a food-bank van: it leaves the warehouse and drops meals
 // and groceries at community sites, several of which can only receive during a
@@ -27,6 +43,14 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
+
+  // Auto-dismiss the out-of-area warning after a few seconds.
+  useEffect(() => {
+    if (!warning) return;
+    const t = setTimeout(() => setWarning(null), 7000);
+    return () => clearTimeout(t);
+  }, [warning]);
 
   // Phase 2: the live agent activity.
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -42,6 +66,18 @@ export default function Home() {
   };
 
   const addStop = (lat: number, lng: number) => {
+    // Only allow sites inside the service area (Northern California / Bay Area).
+    const base = stops.find((s) => s.id === "depot") ?? stops[0];
+    const dist = base ? milesBetween(base.lat, base.lng, lat, lng) : 0;
+    if (dist > SERVICE_RADIUS_MILES) {
+      setWarning(
+        `That location is about ${Math.round(dist)} miles from the food bank — outside our service area. ` +
+          `RouteMind currently serves Northern California (the SF Bay Area, within ${SERVICE_RADIUS_MILES} miles). ` +
+          `It isn't available in that region yet.`
+      );
+      return;
+    }
+    setWarning(null);
     const id = `s${Date.now()}`;
     setStops((prev) => {
       const siteCount = prev.filter((s) => s.id !== "depot").length;
@@ -162,8 +198,18 @@ export default function Home() {
             orderedStopIds={route?.ok ? route.ordered_stop_ids : undefined}
             returnedToStart={route?.returned_to_start}
             onAdd={addStop}
+            serviceRadiusMeters={SERVICE_RADIUS_METERS}
           />
-          <div className="hint">Click the map to add a delivery site.</div>
+          {warning && (
+            <div className="warn" role="alert">
+              <span className="warn-mark">⚠</span>
+              <span>{warning}</span>
+              <button className="warn-x" onClick={() => setWarning(null)} aria-label="Dismiss">×</button>
+            </div>
+          )}
+          <div className="hint">
+            Click inside the shaded area to add a delivery site (Northern California, within {SERVICE_RADIUS_MILES} mi).
+          </div>
         </div>
 
         <aside className="panel">

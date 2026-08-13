@@ -105,6 +105,45 @@ html, body {
   border-radius: 10px;
 }
 
+/* Out-of-service-area warning, shown over the map */
+.warn {
+  position: absolute;
+  z-index: 600;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(560px, calc(100% - 32px));
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: rgba(59, 20, 20, 0.95);
+  border: 1px solid #7a2e2e;
+  color: #ffd9d9;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 12px 14px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  animation: warn-in 0.18s ease-out;
+}
+.warn-mark { color: var(--danger); font-size: 15px; line-height: 1.3; }
+.warn-x {
+  border: none;
+  background: transparent;
+  color: #ffb3b3;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 2px;
+  margin-left: 2px;
+}
+.warn-x:hover { color: #fff; }
+
+@keyframes warn-in {
+  from { opacity: 0; transform: translate(-50%, -6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
 .panel {
   width: 372px;
   border-left: 1px solid var(--line);

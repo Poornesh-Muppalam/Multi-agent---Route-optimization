@@ -1,6 +1,6 @@
 "use client";
 
-import { MapContainer, TileLayer, Marker, Polyline, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Polyline, Circle, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import type { Stop } from "../lib/types";
 
@@ -28,11 +28,22 @@ interface Props {
   orderedStopIds?: string[];
   returnedToStart?: boolean;
   onAdd: (lat: number, lng: number) => void;
+  serviceRadiusMeters?: number;
 }
 
-export default function MapView({ stops, orderedStopIds, returnedToStart, onAdd }: Props) {
+export default function MapView({
+  stops,
+  orderedStopIds,
+  returnedToStart,
+  onAdd,
+  serviceRadiusMeters,
+}: Props) {
   const center: [number, number] =
     stops.length > 0 ? [stops[0].lat, stops[0].lng] : [37.3382, -121.8863];
+
+  // The base anchors the service area; fall back to the map center.
+  const base = stops.find((s) => s.id === "depot") ?? stops[0];
+  const serviceCenter: [number, number] = base ? [base.lat, base.lng] : center;
 
   // Work out the number shown on each pin: its position along the route if we
   // have one, otherwise its position in the list.
@@ -60,6 +71,13 @@ export default function MapView({ stops, orderedStopIds, returnedToStart, onAdd 
         attribution='&copy; OpenStreetMap contributors'
         url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
       />
+      {serviceRadiusMeters && (
+        <Circle
+          center={serviceCenter}
+          radius={serviceRadiusMeters}
+          pathOptions={{ color: "#35d6b0", weight: 1.5, opacity: 0.6, fillColor: "#35d6b0", fillOpacity: 0.06 }}
+        />
+      )}
       {line.length > 1 && (
         <Polyline positions={line} pathOptions={{ color: "#f6a821", weight: 4, opacity: 0.9 }} />
       )}
