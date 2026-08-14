@@ -25,6 +25,7 @@ export interface RouteResult {
   arrivals_min?: number[];
   binding_rules?: string[];
   returned_to_start?: boolean;
+  distance_source?: "road" | "estimate";
 }
 
 // Phase 2: the agent crew.

@@ -136,7 +136,9 @@ routemind/
 
 ## Notes on realism
 
-Phase 1 uses straight line distance and a fixed average speed to estimate travel times, which keeps it dependency free and instant. Moving to production means swapping in real road distances from a routing service and a live traffic feed. The design does not change, only the data source behind the numbers, and that is exactly the difference between a working demo and a shipped product.
+RouteMind now uses **real road distances and drive times** from a routing service (OSRM) rather than straight-line estimates — so the distances, drive times, and ETAs reflect the actual road network. It falls back to a straight-line estimate at a fixed average speed only if the routing service is unreachable, and every result reports which source it used. Set `OSRM_URL` in `backend/.env` to point at your own OSRM instance for production, or `ROUTEMIND_ROUTING=off` to force the estimate.
+
+The remaining step toward full realism is **live traffic**: the public OSRM server reflects the road network but not current congestion. Wiring a traffic-aware provider (e.g. a keyed Distance Matrix API with `departure_time=now`) is a drop-in change behind the same solver interface — the design doesn't change, only the data source behind the numbers.
 
 ## License
 

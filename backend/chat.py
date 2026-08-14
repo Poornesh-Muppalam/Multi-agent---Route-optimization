@@ -381,7 +381,14 @@ def _run_context(stops: List[dict], return_to_start: bool, result: dict) -> str:
     if result.get("ok"):
         km = round(result.get("total_distance_m", 0) / 1000, 1)
         lines.append(f"Total: {km} km, about {result.get('total_time_min', 0)} min of driving.")
+    lines.append(f"Travel data: {_source_note(result)}")
     return "\n".join(lines)
+
+
+def _source_note(result: dict) -> str:
+    if result.get("distance_source") == "road":
+        return "real road distances and typical drive times (OSRM); not live traffic"
+    return "straight-line distances at a fixed 30 km/h average (no live traffic)"
 
 
 def _template_answer(message: str, stops: List[dict], result: dict) -> str:
@@ -391,11 +398,17 @@ def _template_answer(message: str, stops: List[dict], result: dict) -> str:
     km = round(result.get("total_distance_m", 0) / 1000, 1) if result.get("ok") else 0
     mins = result.get("total_time_min", 0) if result.get("ok") else 0
     n = len([s for s in stops if s.get("id") != "depot"])
-    caveat = (
-        "Heads up: RouteMind estimates travel with a steady 30 km/h average and "
-        "straight-line distances — it doesn't include live traffic yet, so treat the "
-        "ETAs as a best case."
-    )
+    if result.get("distance_source") == "road":
+        caveat = (
+            "Note: RouteMind now uses real road distances and typical drive times, but "
+            "not live traffic — so busy periods can run longer than the ETAs."
+        )
+    else:
+        caveat = (
+            "Heads up: RouteMind is estimating travel with a steady 30 km/h average and "
+            "straight-line distances right now (the routing service was unreachable), so "
+            "treat the ETAs as rough."
+        )
 
     if re.search(r"traffic|earlier|early|leave|start|on ?time|\blate\b|buffer|congest|rush", text):
         if earliest:
@@ -454,11 +467,10 @@ async def answer_question(
         text = await agents._llm(
             "You are RouteMind's assistant for a food-bank delivery driver. Answer the "
             "driver's question in 2-4 short, practical sentences using the run context. "
-            "Be honest about limitations: the app estimates travel with a fixed 30 km/h "
-            "average and straight-line distances, with no live traffic. If the driver is "
-            "really asking to change the run, tell them to phrase it as a command like "
-            "'drop the senior center'. Use only the facts in the context; do not invent "
-            "numbers.",
+            "Be honest about limitations using the 'Travel data' note in the context "
+            "(especially that live traffic is not included). If the driver is really "
+            "asking to change the run, tell them to phrase it as a command like 'drop the "
+            "senior center'. Use only the facts in the context; do not invent numbers.",
             f"Run context:\n{_run_context(stops, return_to_start, result)}\n\n"
             f"Driver asks: {message}",
         )

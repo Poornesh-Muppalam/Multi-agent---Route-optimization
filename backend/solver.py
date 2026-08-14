@@ -9,10 +9,45 @@ and reliable.
 
 from __future__ import annotations
 
+import json
 import math
-from typing import List, Optional
+import os
+import urllib.request
+from typing import List, Optional, Tuple
 
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
+
+# A public OSRM server gives real road distances and typical drive times for
+# free with no key. Set ROUTEMIND_ROUTING=off to force the straight-line
+# estimate, or OSRM_URL to point at your own (production) OSRM instance.
+OSRM_URL = os.environ.get("OSRM_URL", "https://router.project-osrm.org")
+
+
+def road_matrices(stops: List[dict]) -> Optional[Tuple[List[List[int]], List[List[float]]]]:
+    """Fetch real road (duration_seconds, distance_meters) matrices from OSRM.
+
+    Returns None on any problem (routing disabled, too many stops, network
+    error, bad response) so the solver can fall back to the estimate. OSRM's
+    public server reflects the real road network but not live traffic.
+    """
+    if os.environ.get("ROUTEMIND_ROUTING", "osrm").lower() == "off":
+        return None
+    n = len(stops)
+    if n < 2 or n > 100:  # keep table calls small and safe
+        return None
+    coords = ";".join(f"{s['lng']},{s['lat']}" for s in stops)
+    url = f"{OSRM_URL}/table/v1/driving/{coords}?annotations=duration,distance"
+    try:
+        with urllib.request.urlopen(url, timeout=6) as resp:
+            data = json.load(resp)
+        if data.get("code") != "Ok":
+            return None
+        d, m = data["durations"], data["distances"]
+        durations = [[int(round((d[i][j] or 0))) for j in range(n)] for i in range(n)]
+        distances = [[float(m[i][j] or 0.0) for j in range(n)] for i in range(n)]
+        return durations, distances
+    except Exception:
+        return None
 
 
 def haversine_meters(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -87,7 +122,15 @@ def solve_route(
             "binding_rules": [],
         }
 
-    time_matrix = build_time_matrix(stops, speed_kmph)
+    # Prefer real road distances/times; fall back to the straight-line estimate.
+    road = road_matrices(stops)
+    if road is not None:
+        time_matrix, dist_matrix = road
+        distance_source = "road"
+    else:
+        time_matrix = build_time_matrix(stops, speed_kmph)
+        dist_matrix = None
+        distance_source = "estimate"
 
     has_windows = any(stop.get("window") for stop in stops)
     has_pins = bool(pins)
@@ -184,10 +227,14 @@ def solve_route(
 
     path = order + [depot] if return_to_start else order
     for a, b in zip(path, path[1:]):
-        meters = haversine_meters(
-            stops[a]["lat"], stops[a]["lng"], stops[b]["lat"], stops[b]["lng"]
-        )
-        seconds = int(round(meters / speed_mps))
+        if dist_matrix is not None:
+            meters = dist_matrix[a][b]
+            seconds = time_matrix[a][b]
+        else:
+            meters = haversine_meters(
+                stops[a]["lat"], stops[a]["lng"], stops[b]["lat"], stops[b]["lng"]
+            )
+            seconds = int(round(meters / speed_mps))
         legs.append(
             {
                 "from": stops[a]["id"],
@@ -216,6 +263,7 @@ def solve_route(
         "arrivals_min": arrivals_min,
         "binding_rules": binding_rules,
         "returned_to_start": return_to_start,
+        "distance_source": distance_source,
     }
 
 

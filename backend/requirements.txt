@@ -4,3 +4,4 @@ ortools==9.12.4544
 pydantic==2.9.2
 anthropic>=0.40.0
 langgraph>=0.2.0
+python-dotenv>=1.0.0

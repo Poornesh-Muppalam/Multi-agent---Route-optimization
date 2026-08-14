@@ -442,6 +442,13 @@ export default function Home() {
                     <div className="label">Drive time</div>
                   </div>
                 </div>
+                {route.distance_source && (
+                  <p className="empty" style={{ marginTop: 10, fontSize: 12 }}>
+                    {route.distance_source === "road"
+                      ? "Real road distances & drive times (OSRM) · not live traffic."
+                      : "Straight-line estimate at 30 km/h · routing service unavailable."}
+                  </p>
+                )}
                 {route.binding_rules && route.binding_rules.length > 0 && (
                   <div style={{ marginTop: 12 }}>
                     {route.binding_rules.map((r, i) => (

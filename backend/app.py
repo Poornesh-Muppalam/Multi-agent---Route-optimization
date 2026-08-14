@@ -14,6 +14,15 @@ from __future__ import annotations
 import json
 from typing import AsyncIterator, List, Optional
 
+# Load backend/.env (ANTHROPIC_API_KEY, ROUTEMIND_MODEL, OSRM_URL, ...) so the
+# app runs on Claude with a plain `uvicorn app:app` — no --env-file needed.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except Exception:  # dotenv is optional; env vars still work if already set
+    pass
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
