@@ -343,8 +343,9 @@ export default function Home() {
             <div className="chat-log">
               {chatLog.length === 0 && (
                 <p className="empty">
-                  Tell me a change in plain English and I'll re-plan the run and say what it cost —
-                  e.g. "drop the senior center", "move the shelter to 8 to 9 am", "put Seven Trees last".
+                  Ask a question about the run ("should I leave earlier to beat traffic?", "why this
+                  order?") or tell me a change ("drop the senior center", "put the shelter first") —
+                  I'll re-plan and say what it cost.
                 </p>
               )}
               {chatLog.map((m, i) => (
@@ -382,9 +383,10 @@ export default function Home() {
             </div>
             <div className="chips">
               {[
+                "should I leave earlier to beat traffic?",
+                "why this order?",
                 "drop the senior center",
-                "put Seven Trees last",
-                "move the shelter to 8 to 9 am",
+                "put the shelter first",
                 "don't return to the food bank",
               ].map((s) => (
                 <button key={s} className="chip" onClick={() => sendChatMessage(s)} disabled={chatBusy}>

@@ -28,7 +28,7 @@ from solver import solve_route
 # Interpreting the message into a structured action.
 # ---------------------------------------------------------------------------
 
-KINDS = ["remove", "set_window", "set_service", "reorder", "set_return", "reoptimize", "unknown"]
+KINDS = ["remove", "set_window", "set_service", "reorder", "set_return", "reoptimize", "ask", "unknown"]
 
 # Structured-output schema for the fast model. Sentinels (-1, "none", "") keep
 # every field a plain required type, which the structured-output API accepts.
@@ -86,7 +86,8 @@ async def _llm_interpret(message: str, stops: List[dict]) -> Optional[dict]:
         '"none" for position/return_value, "" for site_query. site_query is the site '
         "the user named, copied loosely. Choose kind: remove, set_window, set_service, "
         "reorder (with position first/last), set_return (return_value true/false), "
-        "reoptimize (just re-run), or unknown (put a short clarification in note)."
+        "reoptimize (just re-run), ask (the user is asking a question or wants advice "
+        "about the run rather than requesting a specific edit), or unknown."
     )
     user = f"Delivery sites: {site_list or 'none'}.\nRequest: {message}"
     try:
@@ -204,10 +205,19 @@ def _rule_interpret(message: str, stops: List[dict]) -> dict:
         action["service_min"] = int(svc.group(1))
         return action
 
+    # Not an edit — is it a question or a request for advice? If so, answer it.
+    if message.rstrip().endswith("?") or re.match(
+        r"^\s*(should|can|could|would|will|do|does|is|are|why|what|how|when|"
+        r"where|which|who|shall|may|might|tell me|explain|advice|help)\b",
+        text,
+    ):
+        action["kind"] = "ask"
+        return action
+
     action["note"] = (
         "I couldn't tell what to change. Try things like 'drop the senior center', "
-        "'move the shelter to 8 to 9 am', 'put Seven Trees last', or "
-        "'don't return to the food bank'."
+        "'move the shelter to 8 to 9 am', 'put Seven Trees last', or ask a question "
+        "like 'should I leave earlier to beat traffic?'"
     )
     return action
 
@@ -346,10 +356,126 @@ async def _explain(summary: str, before: dict, after: dict) -> Tuple[str, dict]:
     return text, delta
 
 
+# ---------------------------------------------------------------------------
+# Answering a question about the run (not an edit).
+# ---------------------------------------------------------------------------
+def _run_context(stops: List[dict], return_to_start: bool, result: dict) -> str:
+    base = stops[0]["name"] if stops else "the food bank"
+    lines = [f"Base: {base}. Returns to base: {return_to_start}."]
+    ids = result.get("ordered_stop_ids") if result.get("ok") else None
+    arrivals = result.get("arrivals_min") if result.get("ok") else None
+    by_id = {s["id"]: s for s in stops}
+    if ids:
+        for i, sid in enumerate(ids):
+            s = by_id.get(sid)
+            if not s or s.get("id") == "depot":
+                continue
+            bits = []
+            if s.get("window"):
+                bits.append(f"window {agents._fmt(s['window'][0])}-{agents._fmt(s['window'][1])}")
+            if s.get("service_min"):
+                bits.append(f"{s['service_min']} min drop")
+            if arrivals and i < len(arrivals):
+                bits.append(f"ETA {agents._fmt(arrivals[i])}")
+            lines.append(f"- {s['name']}" + (f" ({', '.join(bits)})" if bits else ""))
+    if result.get("ok"):
+        km = round(result.get("total_distance_m", 0) / 1000, 1)
+        lines.append(f"Total: {km} km, about {result.get('total_time_min', 0)} min of driving.")
+    return "\n".join(lines)
+
+
+def _template_answer(message: str, stops: List[dict], result: dict) -> str:
+    text = message.lower()
+    windowed = [s for s in stops if s.get("window")]
+    earliest = min(windowed, key=lambda s: s["window"][0]) if windowed else None
+    km = round(result.get("total_distance_m", 0) / 1000, 1) if result.get("ok") else 0
+    mins = result.get("total_time_min", 0) if result.get("ok") else 0
+    n = len([s for s in stops if s.get("id") != "depot"])
+    caveat = (
+        "Heads up: RouteMind estimates travel with a steady 30 km/h average and "
+        "straight-line distances — it doesn't include live traffic yet, so treat the "
+        "ETAs as a best case."
+    )
+
+    if re.search(r"traffic|earlier|early|leave|start|on ?time|\blate\b|buffer|congest|rush", text):
+        if earliest:
+            return (
+                f"{caveat} Your first hard window is {earliest['name']} at "
+                f"{agents._fmt(earliest['window'][0])}. If mornings are busy, leaving "
+                f"15-30 minutes early is a smart buffer to still make it. You can also "
+                f"tighten that window so the plan bakes in more slack."
+            )
+        return (
+            f"{caveat} No site has a hard window right now, so timing is flexible — "
+            f"but leaving a little early is always a safe way to absorb traffic."
+        )
+
+    if re.search(r"how long|how far|total|distance|duration|time will|drive time", text):
+        return (
+            f"Today's run is {km} km and about {mins} minutes of driving across {n} "
+            f"sites (plus each site's unload time). {caveat}"
+        )
+
+    if re.search(r"why (this|that)?\s*order|what order|order.*(chosen|picked)|sequence", text):
+        if windowed:
+            names = ", ".join(s["name"] for s in windowed)
+            return (
+                f"The order is driven by serving windows: {names} must be reached inside "
+                f"their windows, so the solver arranges the rest of the run around them "
+                f"while keeping the total drive as short as possible."
+            )
+        return (
+            "With no serving windows set, the order is simply the shortest loop that "
+            "visits every site and returns to base."
+        )
+
+    if re.search(r"feasib|work out|possible|make it|can (i|we) (do|make)|on schedule", text):
+        w = len(windowed)
+        return (
+            f"Yes — the current run reaches all {n} sites and satisfies "
+            f"{w} serving window{'s' if w != 1 else ''}. {caveat}"
+        )
+
+    return (
+        f"I'm RouteMind, your delivery planner. Today's run covers {km} km / ~{mins} min "
+        f"across {n} sites. I can answer questions about timing, distance, and the order, "
+        f"or make changes — e.g. 'drop the senior center' or 'put the shelter first'. "
+        f"For richer answers to open-ended questions, add an ANTHROPIC_API_KEY so the "
+        f"agents run on Claude instead of templates."
+    )
+
+
+async def answer_question(
+    message: str, stops: List[dict], return_to_start: bool, speed_kmph: float = 30.0
+) -> str:
+    result = solve_route(stops, return_to_start=return_to_start, speed_kmph=speed_kmph)
+    client = agents._get_client()
+    if client is not None:
+        text = await agents._llm(
+            "You are RouteMind's assistant for a food-bank delivery driver. Answer the "
+            "driver's question in 2-4 short, practical sentences using the run context. "
+            "Be honest about limitations: the app estimates travel with a fixed 30 km/h "
+            "average and straight-line distances, with no live traffic. If the driver is "
+            "really asking to change the run, tell them to phrase it as a command like "
+            "'drop the senior center'. Use only the facts in the context; do not invent "
+            "numbers.",
+            f"Run context:\n{_run_context(stops, return_to_start, result)}\n\n"
+            f"Driver asks: {message}",
+        )
+        if text:
+            return text
+    return _template_answer(message, stops, result)
+
+
 async def chat_turn(
     message: str, stops: List[dict], return_to_start: bool, speed_kmph: float = 30.0
 ) -> dict:
     action = await interpret(message, stops)
+
+    if action.get("kind") == "ask":
+        reply = await answer_question(message, stops, return_to_start, speed_kmph)
+        return {"ok": True, "kind": "ask", "reply": reply}
+
     new_stops, new_return, pins, summary, error = apply_action(action, stops, return_to_start)
 
     if error:
