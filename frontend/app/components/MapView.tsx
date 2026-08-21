@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { MapContainer, TileLayer, Marker, Polyline, Circle, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import type { Stop } from "../lib/types";
@@ -31,7 +32,7 @@ interface Props {
   serviceRadiusMeters?: number;
 }
 
-export default function MapView({
+function MapView({
   stops,
   orderedStopIds,
   returnedToStart,
@@ -66,20 +67,28 @@ export default function MapView({
   }
 
   return (
-    <MapContainer center={center} zoom={12} style={{ height: "100%", width: "100%" }}>
+    <MapContainer
+      center={center}
+      zoom={12}
+      zoomControl={true}
+      style={{ height: "100%", width: "100%" }}
+    >
       <TileLayer
-        attribution='&copy; OpenStreetMap contributors'
-        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+        attribution='&copy; OpenStreetMap contributors &copy; CARTO'
+        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
       />
       {serviceRadiusMeters && (
         <Circle
           center={serviceCenter}
           radius={serviceRadiusMeters}
-          pathOptions={{ color: "#35d6b0", weight: 1.5, opacity: 0.6, fillColor: "#35d6b0", fillOpacity: 0.06 }}
+          pathOptions={{ color: "#35d6b0", weight: 1.5, opacity: 0.5, fillColor: "#35d6b0", fillOpacity: 0.05 }}
         />
       )}
       {line.length > 1 && (
-        <Polyline positions={line} pathOptions={{ color: "#f6a821", weight: 4, opacity: 0.9 }} />
+        <Polyline
+          positions={line}
+          pathOptions={{ className: "route-line", color: "#f6a821", weight: 4, opacity: 0.95 }}
+        />
       )}
       {stops.map((s, i) => (
         <Marker
@@ -92,3 +101,5 @@ export default function MapView({
     </MapContainer>
   );
 }
+
+export default memo(MapView);

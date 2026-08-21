@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { Stop, RouteResult, AgentInfo, ChatMessage, ChatDelta, ModelSummary } from "./lib/types";
 import { optimizeRoute, streamAgents, sendChat, getModel, unlearnSite } from "./lib/api";
@@ -58,14 +58,17 @@ export default function Home() {
   const [agentsBusy, setAgentsBusy] = useState(false);
   const [agentModel, setAgentModel] = useState<{ model: string; live: boolean } | null>(null);
 
-  const clearRun = () => {
+  // Stable across renders (only touches setters) so it doesn't re-create addStop.
+  const clearRun = useCallback(() => {
     setRoute(null);
     setAgents([]);
     setAgentMsgs({});
     setError(null);
-  };
+  }, []);
 
-  const addStop = (lat: number, lng: number) => {
+  // useCallback keeps this reference stable while `stops` is unchanged, so the
+  // memoized map does not re-render on every keystroke in the chat.
+  const addStop = useCallback((lat: number, lng: number) => {
     // Only allow sites inside the service area (Northern California / Bay Area).
     const base = stops.find((s) => s.id === "depot") ?? stops[0];
     const dist = base ? milesBetween(base.lat, base.lng, lat, lng) : 0;
@@ -85,7 +88,7 @@ export default function Home() {
     });
     clearRun();
     setEditingId(id); // drop the new site straight into rename mode
-  };
+  }, [stops, clearRun]);
 
   const removeStop = (id: string) => {
     if (id === "depot") return;

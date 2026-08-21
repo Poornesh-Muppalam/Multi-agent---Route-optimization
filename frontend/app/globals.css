@@ -1,21 +1,25 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap");
 
-/* RouteMind design tokens: a night dispatch console around a bright map. */
+/* RouteMind design tokens: a sleek night dispatch console. */
 :root {
   --font-inter: "Inter", system-ui, -apple-system, sans-serif;
   --font-grotesk: "Space Grotesk", "Inter", system-ui, sans-serif;
-  --ink: #0c1220;
-  --panel: #141c2e;
-  --panel-2: #1b2540;
-  --line: #263252;
-  --text: #e7ecf6;
-  --muted: #8b96ad;
+  --ink: #0a0f1c;
+  --panel: #111a2b;
+  --panel-2: #1a2540;
+  --line: #253150;
+  --text: #eaeef8;
+  --muted: #8c97ae;
   --amber: #f6a821;
+  --amber-2: #ffc24d;
   --amber-soft: #3a2f16;
   --teal: #35d6b0;
   --teal-soft: #16332c;
   --danger: #ff6b6b;
   --radius: 12px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 12px 34px rgba(0, 0, 0, 0.4);
 }
 
 * { box-sizing: border-box; }
@@ -24,10 +28,14 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  background: var(--ink);
+  background:
+    radial-gradient(1200px 600px at 78% -10%, rgba(246, 168, 33, 0.06), transparent 60%),
+    radial-gradient(900px 500px at 10% 110%, rgba(53, 214, 176, 0.05), transparent 60%),
+    var(--ink);
   color: var(--text);
   font-family: var(--font-inter), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 .shell {
@@ -465,3 +473,116 @@ input.text:focus { outline: none; border-color: var(--amber); }
 .pin.amber { background: var(--amber); }
 .pin.teal { background: var(--teal); border-radius: 50%; }
 .pin.teal span { transform: none; }
+
+/* ============================================================
+   Visual polish & smoothness (appended: overrides earlier rules)
+   ============================================================ */
+
+/* Smooth, consistent transitions on interactive surfaces */
+button, .chip, .forget, .name-text, .remove, input.text, .name-edit,
+.check, .stat, .bubble, .agent-row, .learn-row, .stop-row, .phase-pill,
+.warn-x {
+  transition:
+    background-color 0.18s var(--ease), border-color 0.18s var(--ease),
+    color 0.18s var(--ease), transform 0.18s var(--ease),
+    box-shadow 0.2s var(--ease), filter 0.18s var(--ease), opacity 0.18s var(--ease);
+}
+
+::selection { background: rgba(246, 168, 33, 0.28); }
+
+:focus-visible { outline: 2px solid rgba(246, 168, 33, 0.6); outline-offset: 2px; border-radius: 6px; }
+
+/* Thin, styled scrollbars */
+.panel, .chat-log { scrollbar-width: thin; scrollbar-color: #2c3a5e transparent; }
+.panel::-webkit-scrollbar, .chat-log::-webkit-scrollbar { width: 9px; }
+.panel::-webkit-scrollbar-track, .chat-log::-webkit-scrollbar-track { background: transparent; }
+.panel::-webkit-scrollbar-thumb, .chat-log::-webkit-scrollbar-thumb {
+  background: #2c3a5e; border-radius: 9px; border: 2px solid transparent; background-clip: padding-box;
+}
+.panel::-webkit-scrollbar-thumb:hover, .chat-log::-webkit-scrollbar-thumb:hover {
+  background: #3d4f7d; background-clip: padding-box;
+}
+
+/* Header */
+.topbar {
+  background: linear-gradient(180deg, #14203a 0%, #0e1626 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 6px 24px rgba(0, 0, 0, 0.25);
+  z-index: 10;
+}
+.brand h1 {
+  background: linear-gradient(90deg, #ffffff, #c8d2e8);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.brand .dot { animation: pulse-dot 2.6s ease-in-out infinite; }
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 4px var(--amber-soft); }
+  50% { box-shadow: 0 0 0 8px rgba(246, 168, 33, 0.06); }
+}
+.phase-pill { box-shadow: inset 0 0 0 1px rgba(53, 214, 176, 0.12); }
+
+/* Panel sections ease in on mount */
+.panel section { animation: section-in 0.4s var(--ease) both; }
+@keyframes section-in {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Primary button: gradient + glow + lift */
+button.primary {
+  background: linear-gradient(180deg, var(--amber-2), var(--amber));
+  box-shadow: 0 6px 20px rgba(246, 168, 33, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transition: transform 0.16s var(--ease), box-shadow 0.2s var(--ease), filter 0.16s var(--ease);
+}
+button.primary:hover:not(:disabled) {
+  transform: translateY(-1px); filter: brightness(1.03);
+  box-shadow: 0 12px 28px rgba(246, 168, 33, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+button.primary:active:not(:disabled) { transform: translateY(0); box-shadow: 0 4px 14px rgba(246, 168, 33, 0.3); }
+
+button.ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.035); transform: translateY(-1px); }
+
+/* Stat cards with depth + accent bar */
+.stat {
+  background: linear-gradient(180deg, #1d2841, #151e33);
+  box-shadow: var(--shadow-sm);
+  position: relative; overflow: hidden;
+}
+.stat::before {
+  content: ""; position: absolute; top: 0; left: 0; bottom: 0; width: 3px;
+  background: linear-gradient(180deg, var(--amber-2), var(--amber));
+}
+.stat .num { font-size: 25px; letter-spacing: -0.5px; }
+
+.badge { box-shadow: 0 2px 7px rgba(0, 0, 0, 0.4); }
+
+.chip:hover:not(:disabled), .forget:hover:not(:disabled) { transform: translateY(-1px); }
+
+/* Chat bubbles ease in */
+.bubble { animation: section-in 0.26s var(--ease) both; }
+
+/* Map: dark canvas + glowing route + interactive pins */
+.map-wrap { background: var(--ink); }
+.leaflet-container { background: #0a0f1c !important; }
+.route-line {
+  filter: drop-shadow(0 0 6px rgba(246, 168, 33, 0.55));
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.pin { transition: transform 0.15s var(--ease), filter 0.15s var(--ease); }
+.leaflet-marker-icon:hover .pin { transform: rotate(-45deg) scale(1.14); filter: brightness(1.12); }
+
+/* Leaflet controls & attribution restyled for the dark theme */
+.leaflet-bar { border: none !important; box-shadow: var(--shadow-sm) !important; }
+.leaflet-bar a {
+  background: #131c30 !important; color: #cdd6ea !important;
+  border-color: #253150 !important; transition: background-color 0.15s var(--ease);
+}
+.leaflet-bar a:hover { background: #1d2740 !important; color: #fff !important; }
+.leaflet-control-attribution {
+  background: rgba(10, 15, 28, 0.72) !important; color: #67728c !important; border-radius: 6px 0 0 0;
+}
+.leaflet-control-attribution a { color: #8c97ae !important; }
+
+/* Respect reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
