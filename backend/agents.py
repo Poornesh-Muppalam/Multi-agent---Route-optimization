@@ -193,11 +193,11 @@ async def optimizer(state: State) -> dict:
     else:
         by_id = {s["id"]: s for s in state["stops"]}
         order = [by_id[i]["name"] for i in result.get("ordered_stop_ids", [])]
-        km = round(result.get("total_distance_m", 0) / 1000, 1)
+        miles = round(result.get("total_distance_m", 0) / 1609.344, 1)
         mins = result.get("total_time_min", 0)
         summary = (
             f"Best run: {' -> '.join(order)}. "
-            f"{km} km, about {mins} min of driving."
+            f"{miles} mi, about {mins} min of driving."
         )
     return {"result": result, "optimize_summary": summary}
 
@@ -219,15 +219,15 @@ async def explainer(state: State) -> dict:
             await _pause_if_templated()
         return {"explanation": text}
 
-    km = round(result.get("total_distance_m", 0) / 1000, 1)
+    miles = round(result.get("total_distance_m", 0) / 1609.344, 1)
     mins = result.get("total_time_min", 0)
     rules = state.get("window_rules", [])
     text = await _llm(
         "You are the Explainer. In 1-2 short sentences, explain the delivery "
-        "run to a non-technical driver: the total distance and drive time, and "
-        "why the order reaches each site inside its serving window. Use ONLY "
-        "the numbers given; do not invent any.",
-        f"Total distance: {km} km. Drive time: {mins} min. "
+        "run to a non-technical driver: the total distance in miles and the "
+        "drive time, and why the order reaches each site inside its serving "
+        "window. Use ONLY the numbers given; do not invent any.",
+        f"Total distance: {miles} mi. Drive time: {mins} min. "
         f"Serving windows met: {rules or 'none'}.",
     )
     if text is None:
@@ -235,7 +235,7 @@ async def explainer(state: State) -> dict:
             f" The order was arranged so the van reaches {rules[0]}." if rules else ""
         )
         text = (
-            f"The run covers {km} km in about {mins} minutes of driving."
+            f"The run covers {miles} mi in about {mins} minutes of driving."
             f"{rule_note}"
         )
         await _pause_if_templated()

@@ -330,9 +330,9 @@ def _totals(result: dict) -> Tuple[float, float]:
 async def _explain(summary: str, before: dict, after: dict) -> Tuple[str, dict]:
     b_m, b_min = _totals(before) if before.get("ok") else (0, 0)
     a_m, a_min = _totals(after)
-    d_km = round((a_m - b_m) / 1000, 1)
+    d_mi = round((a_m - b_m) / 1609.344, 1)
     d_min = round(a_min - b_min, 1)
-    delta = {"distance_km": d_km, "time_min": d_min}
+    delta = {"distance_mi": d_mi, "time_min": d_min}
 
     def phrase(v: float, unit: str) -> str:
         if v > 0:
@@ -341,9 +341,9 @@ async def _explain(summary: str, before: dict, after: dict) -> Tuple[str, dict]:
             return f"saves {abs(v)} {unit}"
         return f"is the same {unit}"
 
-    cost = f"That change {phrase(d_km, 'km')} and {phrase(d_min, 'min')} of driving."
+    cost = f"That change {phrase(d_mi, 'mi')} and {phrase(d_min, 'min')} of driving."
     if not before.get("ok"):
-        cost = f"The run now covers {round(a_m/1000,1)} km in about {a_min} min."
+        cost = f"The run now covers {round(a_m/1609.344,1)} mi in about {a_min} min."
 
     text = await agents._llm(
         "You are the Explainer for a food-bank delivery app. In 1-2 short, friendly "
@@ -379,8 +379,8 @@ def _run_context(stops: List[dict], return_to_start: bool, result: dict) -> str:
                 bits.append(f"ETA {agents._fmt(arrivals[i])}")
             lines.append(f"- {s['name']}" + (f" ({', '.join(bits)})" if bits else ""))
     if result.get("ok"):
-        km = round(result.get("total_distance_m", 0) / 1000, 1)
-        lines.append(f"Total: {km} km, about {result.get('total_time_min', 0)} min of driving.")
+        miles = round(result.get("total_distance_m", 0) / 1609.344, 1)
+        lines.append(f"Total: {miles} mi, about {result.get('total_time_min', 0)} min of driving.")
     lines.append(f"Travel data: {_source_note(result)}")
     return "\n".join(lines)
 
@@ -388,14 +388,14 @@ def _run_context(stops: List[dict], return_to_start: bool, result: dict) -> str:
 def _source_note(result: dict) -> str:
     if result.get("distance_source") == "road":
         return "real road distances and typical drive times (OSRM); not live traffic"
-    return "straight-line distances at a fixed 30 km/h average (no live traffic)"
+    return "straight-line distances at a fixed ~19 mph average (no live traffic)"
 
 
 def _template_answer(message: str, stops: List[dict], result: dict) -> str:
     text = message.lower()
     windowed = [s for s in stops if s.get("window")]
     earliest = min(windowed, key=lambda s: s["window"][0]) if windowed else None
-    km = round(result.get("total_distance_m", 0) / 1000, 1) if result.get("ok") else 0
+    miles = round(result.get("total_distance_m", 0) / 1609.344, 1) if result.get("ok") else 0
     mins = result.get("total_time_min", 0) if result.get("ok") else 0
     n = len([s for s in stops if s.get("id") != "depot"])
     if result.get("distance_source") == "road":
@@ -405,7 +405,7 @@ def _template_answer(message: str, stops: List[dict], result: dict) -> str:
         )
     else:
         caveat = (
-            "Heads up: RouteMind is estimating travel with a steady 30 km/h average and "
+            "Heads up: RouteMind is estimating travel with a steady ~19 mph average and "
             "straight-line distances right now (the routing service was unreachable), so "
             "treat the ETAs as rough."
         )
@@ -425,7 +425,7 @@ def _template_answer(message: str, stops: List[dict], result: dict) -> str:
 
     if re.search(r"how long|how far|total|distance|duration|time will|drive time", text):
         return (
-            f"Today's run is {km} km and about {mins} minutes of driving across {n} "
+            f"Today's run is {miles} mi and about {mins} minutes of driving across {n} "
             f"sites (plus each site's unload time). {caveat}"
         )
 
@@ -450,7 +450,7 @@ def _template_answer(message: str, stops: List[dict], result: dict) -> str:
         )
 
     return (
-        f"I'm RouteMind, your delivery planner. Today's run covers {km} km / ~{mins} min "
+        f"I'm RouteMind, your delivery planner. Today's run covers {miles} mi / ~{mins} min "
         f"across {n} sites. I can answer questions about timing, distance, and the order, "
         f"or make changes — e.g. 'drop the senior center' or 'put the shelter first'. "
         f"For richer answers to open-ended questions, add an ANTHROPIC_API_KEY so the "

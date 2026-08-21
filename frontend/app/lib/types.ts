@@ -37,7 +37,7 @@ export interface AgentInfo {
 
 // Phase 3: the chat.
 export interface ChatDelta {
-  distance_km: number;
+  distance_mi: number;
   time_min: number;
 }
 

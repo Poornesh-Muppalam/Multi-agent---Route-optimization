@@ -263,7 +263,7 @@ export default function Home() {
   }, [route]);
 
   const siteCount = stops.filter((s) => s.id !== "depot").length;
-  const km = route?.total_distance_m ? (route.total_distance_m / 1000).toFixed(1) : "0";
+  const miles = route?.total_distance_m ? (route.total_distance_m / 1609.344).toFixed(1) : "0";
 
   return (
     <div className="shell">
@@ -399,7 +399,7 @@ export default function Home() {
                   className={`bubble ${m.role}${m.ok === false ? " bad" : ""}`}
                 >
                   {m.text}
-                  {m.delta && (m.delta.distance_km !== 0 || m.delta.time_min !== 0) && (
+                  {m.delta && (m.delta.distance_mi !== 0 || m.delta.time_min !== 0) && (
                     <div className="delta">{fmtDelta(m.delta)}</div>
                   )}
                 </div>
@@ -520,7 +520,7 @@ export default function Home() {
               <>
                 <div className="stats">
                   <div className="stat">
-                    <div className="num">{km}<span style={{ fontSize: 13 }}> km</span></div>
+                    <div className="num">{miles}<span style={{ fontSize: 13 }}> mi</span></div>
                     <div className="label">Total distance</div>
                   </div>
                   <div className="stat">
@@ -532,7 +532,7 @@ export default function Home() {
                   <p className="empty" style={{ marginTop: 10, fontSize: 12 }}>
                     {route.distance_source === "road"
                       ? "Real road distances & drive times (OSRM) · not live traffic."
-                      : "Straight-line estimate at 30 km/h · routing service unavailable."}
+                      : "Straight-line estimate at ~19 mph · routing service unavailable."}
                   </p>
                 )}
                 {route.binding_rules && route.binding_rules.length > 0 && (
@@ -569,5 +569,5 @@ function fmtClock(minutes: number): string {
 
 function fmtDelta(d: ChatDelta): string {
   const sign = (v: number) => (v > 0 ? `+${v}` : `${v}`);
-  return `${sign(d.distance_km)} km · ${sign(d.time_min)} min vs before`;
+  return `${sign(d.distance_mi)} mi · ${sign(d.time_min)} min vs before`;
 }
