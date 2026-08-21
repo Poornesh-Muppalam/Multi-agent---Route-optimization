@@ -61,6 +61,30 @@ export interface ChatMessage {
   ok?: boolean;
 }
 
+// Phase 4: the learned service-time model.
+export interface ModelSite {
+  id: string;
+  name: string;
+  default_min: number | null;
+  learned_min: number | null;
+  trips: number;
+}
+
+export interface ModelSummary {
+  ok: boolean;
+  model_version: number;
+  total_trips: number;
+  mae_min: number | null;
+  sites: ModelSite[];
+}
+
+export interface UnlearnResponse {
+  ok: boolean;
+  removed: number;
+  reply: string;
+  model?: ModelSummary;
+}
+
 // Events streamed from /optimize/agents/stream over Server-Sent Events.
 export type AgentEvent =
   | { type: "pipeline"; agents: AgentInfo[]; model: string; live: boolean }

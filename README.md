@@ -66,6 +66,20 @@ Backend endpoint added in Phase 3:
 
 - `POST /chat` — interpret a change, apply it, re-solve, and return the new run plus an explanation and cost delta.
 
+### Learning and unlearning (Phase 4)
+
+Phase 1 assumed a fixed unload time per site. In reality the on-site service time varies — by site, by how much is delivered, by the day. A small **scikit-learn** model (`backend/learning.py`) learns each site's real service time from a log of past trips, and the **Learned drop times** panel shows the learned minutes against the old default (e.g. a stop planned at 15 min really takes ~20). *Apply learned times to the run* pushes those into the plan so the ETAs reflect what actually happens. Travel time still comes from the road network (OSRM); the model refines the human part of the run.
+
+It also supports the **right to be forgotten**. *Forget* on a site calls an unlearning agent that removes that site's trips and **retrains** — exact unlearning, not an approximation — so its history no longer influences any prediction. The model is small on purpose: it fits in milliseconds, which is what makes retrain-to-forget practical.
+
+There is no real trip log yet, so on first run the backend generates a clearly-labelled synthetic history (`trips.json`, git-ignored) that stands in for real logged deliveries. In production this is where your actual delivery records would go.
+
+Backend endpoints added in Phase 4:
+
+- `GET /model` — the learned vs default service time per site, trip counts, and fit error.
+- `POST /model/unlearn` — forget one site's trips and retrain (right to be forgotten).
+- `POST /model/reset` — regenerate the demo trip log and retrain.
+
 ## Build phases
 
 Phase 1 is complete and runnable. The later phases layer on top of this same foundation.
@@ -73,7 +87,7 @@ Phase 1 is complete and runnable. The later phases layer on top of this same fou
 - [x] Phase 1: the map and the solver. Add stops, respect time window rules, draw the optimized route.
 - [x] Phase 2: the agents. LangGraph plus a fast language model coordinate the planner, data, conditions, optimizer, and explainer agents, and stream their steps into a live activity panel.
 - [x] Phase 3: the chat. Say "put the shelter first" or "drop the senior center" and watch the run redraw, with the explainer telling you what changed and what it cost.
-- [ ] Phase 4: learning and unlearning. A small model learns real travel and service times from past trips, and an unlearning agent removes a single customer's influence from that model on request, so the system stays privacy compliant when someone exercises their right to be forgotten.
+- [x] Phase 4: learning and unlearning. A small model learns real on-site service times from past trips, and an unlearning agent removes a single site's influence from that model on request, so the system stays privacy compliant when someone exercises their right to be forgotten.
 
 ## Tech stack
 
@@ -117,8 +131,10 @@ Open http://localhost:3000 and you will see the map with seeded stops. Click Opt
 routemind/
 ├── backend/
 │   ├── app.py            FastAPI app, the /optimize and agent endpoints
-│   ├── solver.py         OR-Tools route solver and distance math
+│   ├── solver.py         OR-Tools solver + real road distances (OSRM)
 │   ├── agents.py         the LangGraph agent crew (Phase 2)
+│   ├── chat.py           the plain-English chat: edits + questions (Phase 3)
+│   ├── learning.py       the learned service-time model + unlearning (Phase 4)
 │   └── requirements.txt
 ├── frontend/
 │   └── app/

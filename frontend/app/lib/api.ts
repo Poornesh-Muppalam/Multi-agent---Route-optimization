@@ -1,4 +1,11 @@
-import type { Stop, RouteResult, AgentEvent, ChatResponse } from "./types";
+import type {
+  Stop,
+  RouteResult,
+  AgentEvent,
+  ChatResponse,
+  ModelSummary,
+  UnlearnResponse,
+} from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
 
@@ -73,5 +80,23 @@ export async function sendChat(
   if (!res.ok) {
     throw new Error(`Backend responded with ${res.status}`);
   }
+  return res.json();
+}
+
+// Phase 4: the learned service-time model.
+export async function getModel(): Promise<ModelSummary> {
+  const res = await fetch(`${BASE}/model`);
+  if (!res.ok) throw new Error(`Backend responded with ${res.status}`);
+  return res.json();
+}
+
+// Ask the unlearning agent to forget one site's trips and retrain.
+export async function unlearnSite(customerId: string): Promise<UnlearnResponse> {
+  const res = await fetch(`${BASE}/model/unlearn`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ customer_id: customerId }),
+  });
+  if (!res.ok) throw new Error(`Backend responded with ${res.status}`);
   return res.json();
 }

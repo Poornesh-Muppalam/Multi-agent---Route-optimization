@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import type { Stop, RouteResult, AgentInfo, ChatMessage, ChatDelta } from "./lib/types";
-import { optimizeRoute, streamAgents, sendChat } from "./lib/api";
+import type { Stop, RouteResult, AgentInfo, ChatMessage, ChatDelta, ModelSummary } from "./lib/types";
+import { optimizeRoute, streamAgents, sendChat, getModel, unlearnSite } from "./lib/api";
 
 // Leaflet touches the browser window, so the map only loads on the client.
 const MapView = dynamic(() => import("./components/MapView"), { ssr: false });
@@ -189,6 +189,51 @@ export default function Home() {
     }
   };
 
+  // Phase 4: the learned service-time model.
+  const [model, setModel] = useState<ModelSummary | null>(null);
+  const [modelBusy, setModelBusy] = useState(false);
+  const [modelNote, setModelNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    getModel().then(setModel).catch(() => setModel(null));
+  }, []);
+
+  // Set each site's drop time to what the model learned from past trips.
+  const applyLearnedTimes = () => {
+    if (!model) return;
+    const learned = new Map(
+      model.sites.filter((s) => s.learned_min != null).map((s) => [s.id, s.learned_min as number])
+    );
+    let applied = 0;
+    setStops((prev) =>
+      prev.map((s) => {
+        if (learned.has(s.id)) {
+          applied += 1;
+          return { ...s, service_min: learned.get(s.id) };
+        }
+        return s;
+      })
+    );
+    clearRun();
+    setModelNote(`Applied learned drop times to ${applied} site(s). Re-optimize to see the effect.`);
+  };
+
+  // Ask the unlearning agent to forget one site's trips and retrain.
+  const forgetSite = async (id: string) => {
+    setModelBusy(true);
+    setModelNote(null);
+    try {
+      const res = await unlearnSite(id);
+      if (res.model) setModel(res.model);
+      else setModel(await getModel());
+      setModelNote(res.reply);
+    } catch {
+      setModelNote("Couldn't reach the backend on port 8000.");
+    } finally {
+      setModelBusy(false);
+    }
+  };
+
   // The first agent that hasn't reported yet is the one currently working.
   const runningAgent = agentsBusy
     ? agents.find((a) => !(a.id in agentMsgs))?.id ?? null
@@ -228,7 +273,7 @@ export default function Home() {
           <h1>RouteMind</h1>
           <span className="tag">food-bank delivery routing</span>
         </div>
-        <span className="phase-pill">phase 3 · chat + agents</span>
+        <span className="phase-pill">phase 4 · learning + chat</span>
       </header>
 
       <div className="body">
@@ -395,6 +440,47 @@ export default function Home() {
               ))}
             </div>
           </section>
+
+          {model && (
+            <section>
+              <h2>
+                Learned drop times
+                <span className="meta" style={{ textTransform: "none", letterSpacing: 0, marginLeft: 8 }}>
+                  {model.total_trips} past trips · ±{model.mae_min}m · v{model.model_version}
+                </span>
+              </h2>
+              <p className="empty" style={{ marginBottom: 10 }}>
+                A small model learns each site's real on-site time from past deliveries (travel time
+                still comes from the road network). "Forget" removes a site's trips and retrains —
+                the right to be forgotten.
+              </p>
+              {model.sites.map((s) => (
+                <div className="learn-row" key={s.id}>
+                  <span className="learn-name">{s.name}</span>
+                  <span className="learn-nums">
+                    <span className="learn-default">{s.default_min ?? "–"}</span>
+                    <span className="learn-arrow">→</span>
+                    <span className="learn-value">{s.learned_min ?? "–"}<span className="learn-unit">m</span></span>
+                    <span className="learn-trips">{s.trips} trips</span>
+                  </span>
+                  <button
+                    className="forget"
+                    onClick={() => forgetSite(s.id)}
+                    disabled={modelBusy || s.trips === 0}
+                    title={s.trips === 0 ? "Already forgotten" : `Forget ${s.name} and retrain`}
+                  >
+                    {s.trips === 0 ? "forgotten" : "forget"}
+                  </button>
+                </div>
+              ))}
+              <div className="row" style={{ marginTop: 12 }}>
+                <button className="ghost" onClick={applyLearnedTimes} disabled={modelBusy}>
+                  Apply learned times to the run
+                </button>
+              </div>
+              {modelNote && <p className="empty" style={{ marginTop: 10 }}>{modelNote}</p>}
+            </section>
+          )}
 
           {agents.length > 0 && (
             <section>

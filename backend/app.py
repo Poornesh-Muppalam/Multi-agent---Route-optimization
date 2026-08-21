@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 
 from agents import run_agents, stream_agents
 from chat import chat_turn
+from learning import model_summary, reset_history, unlearn
 from solver import solve_route
 
 app = FastAPI(title="RouteMind API", version="0.2.0")
@@ -65,9 +66,13 @@ class ChatRequest(OptimizeRequest):
     message: str
 
 
+class UnlearnRequest(BaseModel):
+    customer_id: str
+
+
 @app.get("/")
 def health():
-    return {"status": "ok", "service": "RouteMind API", "phase": 3}
+    return {"status": "ok", "service": "RouteMind API", "phase": 4}
 
 
 @app.post("/optimize")
@@ -118,3 +123,22 @@ async def chat(req: ChatRequest):
     and explain what changed and what it cost."""
     stops = [stop.model_dump() for stop in req.stops]
     return await chat_turn(req.message, stops, req.return_to_start, req.speed_kmph)
+
+
+@app.get("/model")
+def model_status():
+    """Phase 4: the learned on-site service times per site vs the defaults,
+    trip counts, and the model's fit error."""
+    return model_summary()
+
+
+@app.post("/model/unlearn")
+def model_unlearn(req: UnlearnRequest):
+    """Phase 4: forget one site's trips and retrain (the right to be forgotten)."""
+    return unlearn(req.customer_id)
+
+
+@app.post("/model/reset")
+def model_reset():
+    """Regenerate the demo trip log and retrain."""
+    return reset_history()

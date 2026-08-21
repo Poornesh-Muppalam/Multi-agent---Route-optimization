@@ -5,3 +5,5 @@ pydantic==2.9.2
 anthropic>=0.40.0
 langgraph>=0.2.0
 python-dotenv>=1.0.0
+scikit-learn>=1.4.0
+numpy>=1.26.0

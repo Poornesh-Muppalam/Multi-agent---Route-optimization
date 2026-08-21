@@ -364,6 +364,40 @@ input.text:focus { outline: none; border-color: var(--amber); }
 .chip:hover { color: var(--text); border-color: var(--amber); }
 .chip:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* Phase 4: the learned-times panel */
+.learn-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.learn-row:last-of-type { border-bottom: none; }
+.learn-name { flex: 1; font-size: 13px; min-width: 0; }
+.learn-nums {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+}
+.learn-default { color: var(--muted); text-decoration: line-through; }
+.learn-arrow { color: var(--muted); }
+.learn-value { color: var(--teal); font-weight: 600; font-size: 14px; }
+.learn-unit { font-size: 11px; }
+.learn-trips { color: var(--muted); font-size: 11px; margin-left: 4px; }
+.forget {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.forget:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
+.forget:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* Phase 2: the live agent activity panel */
 .agent-row {
   display: flex;

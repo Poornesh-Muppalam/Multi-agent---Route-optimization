@@ -16,3 +16,6 @@ backend/.env
 # OS / editor
 .DS_Store
 .vscode/
+
+# Generated demo trip log (recreated deterministically on first run)
+trips.json
