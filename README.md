@@ -89,11 +89,34 @@ Phase 1 is complete and runnable. The later phases layer on top of this same fou
 - [x] Phase 3: the chat. Say "put the shelter first" or "drop the senior center" and watch the run redraw, with the explainer telling you what changed and what it cost.
 - [x] Phase 4: learning and unlearning. A small model learns real on-site service times from past trips, and an unlearning agent removes a single site's influence from that model on request, so the system stays privacy compliant when someone exercises their right to be forgotten.
 
+## Deploy
+
+RouteMind is two programs, so it deploys as two services (both have free tiers and connect to this GitHub repo): the FastAPI backend on **Render**, the Next.js frontend on **Vercel**.
+
+### 1. Backend on Render
+
+1. Push this repo to GitHub (already done).
+2. In Render, create a new **Blueprint** and point it at the repo — Render reads [`render.yaml`](render.yaml) and provisions the `routemind-api` web service automatically (root `backend/`, `uvicorn app:app --host 0.0.0.0 --port $PORT`).
+   - Or create a **Web Service** by hand: Root Directory `backend`, Build `pip install -r requirements.txt`, Start `uvicorn app:app --host 0.0.0.0 --port $PORT`.
+3. (Optional) In the service's **Environment**, add `ANTHROPIC_API_KEY` to run the agents/chat on Claude instead of the template fallback.
+4. Note the service URL, e.g. `https://routemind-api.onrender.com`. Open it to see the health check.
+
+> The free tier sleeps after inactivity, so the first request after idle takes ~30–60s to wake.
+
+### 2. Frontend on Vercel
+
+1. In Vercel, **Import** the same GitHub repo.
+2. Set **Root Directory** to `frontend`.
+3. Add an environment variable **`NEXT_PUBLIC_BACKEND_URL`** = your Render URL from step 1 (set it *before* deploying — it's baked in at build time).
+4. Deploy. Vercel auto-detects Next.js; open the resulting URL and you have the live app.
+
+CORS is already open on the backend, so the Vercel frontend can call the Render backend out of the box. To point a local frontend at a deployed backend instead, set the same variable in `frontend/.env.local`.
+
 ## Tech stack
 
 - Frontend: Next.js 14, TypeScript, React, Leaflet with OpenStreetMap tiles.
-- Backend: FastAPI (Python) with Google OR-Tools for the optimization.
-- Later phases: LangGraph for the agent graph, a fast hosted language model for the agents, and scikit-learn for the learned travel time model.
+- Backend: FastAPI (Python) with Google OR-Tools for the optimization, LangGraph for the agent graph, a fast hosted language model (Claude) for the agents, OSRM for real road distances, and scikit-learn for the learned service-time model.
+- Deploy: Render (backend) + Vercel (frontend).
 
 ## Getting started
 

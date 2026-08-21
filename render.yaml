@@ -1,0 +1,18 @@
+# Render blueprint for the RouteMind backend (FastAPI + OR-Tools).
+# Render reads this automatically when you create a "Blueprint" from the repo.
+# The frontend deploys separately on Vercel (see README → Deploy).
+services:
+  - type: web
+    name: routemind-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      # Optional — add your key in the Render dashboard (not here) to run the
+      # agents and chat on Claude instead of the template fallback:
+      # ANTHROPIC_API_KEY  (set as a secret in the dashboard)
