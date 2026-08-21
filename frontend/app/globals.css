@@ -327,3 +327,48 @@ input.text::placeholder { color: var(--muted); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+/* ============================================================
+   Refinement pass — cooler, cleaner (appended: wins on order)
+   ============================================================ */
+
+/* Thin gradient accent strip across the very top of the app */
+.topbar { position: relative; box-shadow: 0 1px 0 rgba(16, 24, 40, 0.02), 0 10px 26px rgba(16, 24, 40, 0.03); }
+.topbar::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--amber), var(--teal-2));
+}
+.brand h1 { font-size: 20px; }
+
+/* The run sheet reads like a route timeline; rows feel interactive */
+.stop-row { position: relative; border-radius: 10px; padding: 8px; margin: 2px -8px; }
+.stop-row:hover { background: var(--panel-2); }
+.stop-row:not(:last-child)::before {
+  content: ""; position: absolute; left: 21px; top: 36px; bottom: -2px; width: 2px;
+  background: var(--line-2); border-radius: 2px;
+}
+.stop-row > * { position: relative; z-index: 1; }
+
+/* Softer, layered depth */
+.panel { box-shadow: -10px 0 34px rgba(16, 24, 40, 0.05); }
+.panel section { padding: 20px 22px; }
+.stat { transition: transform 0.18s var(--ease), box-shadow 0.2s var(--ease); }
+.stat:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+
+/* Subtle inset vignette gives the map some depth */
+.map-wrap::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 401;
+  box-shadow: inset 0 0 90px rgba(16, 24, 40, 0.05);
+}
+
+/* A living, glowing route line */
+.route-line {
+  filter: drop-shadow(0 1px 5px rgba(239, 159, 13, 0.5));
+  stroke-dasharray: 14 9;
+  animation: route-flow 1.5s linear infinite;
+}
+@keyframes route-flow { to { stroke-dashoffset: -46; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .route-line { animation: none; stroke-dasharray: none; }
+}
