@@ -68,6 +68,8 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
   const mapRef = useRef<google.maps.Map | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
   const acRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const lastPlaceRef = useRef<string | null>(null);
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
 
   const base = stops.find((s) => s.id === "depot") ?? stops[0];
@@ -144,13 +146,19 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
   const onPlaceChanged = useCallback(() => {
     const place = acRef.current?.getPlace();
     const loc = place?.geometry?.location;
-    if (!loc) {
-      onWarn("Pick an address from the suggestions to add it.");
+    // A fully-resolved selection has both geometry and a place_id. Google fires
+    // this event twice on Enter (a rough guess, then the exact place); require
+    // both, and ignore a repeat of the same place_id, so one address adds once.
+    if (!loc || !place?.place_id) {
+      onWarn("Pick an address from the dropdown suggestions to add it.");
       return;
     }
+    if (place.place_id === lastPlaceRef.current) return;
+    lastPlaceRef.current = place.place_id;
     const name =
-      place?.name || place?.formatted_address?.split(",")[0] || "New delivery site";
+      place.name || place.formatted_address?.split(",")[0] || "New delivery site";
     onAdd(loc.lat(), loc.lng(), name);
+    if (inputRef.current) inputRef.current.value = "";
   }, [onAdd, onWarn]);
 
   return (
@@ -220,9 +228,9 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
         <Autocomplete
           onLoad={(ac) => (acRef.current = ac)}
           onPlaceChanged={onPlaceChanged}
-          options={{ fields: ["geometry", "name", "formatted_address"], componentRestrictions: { country: "us" } }}
+          options={{ fields: ["place_id", "geometry", "name", "formatted_address"], componentRestrictions: { country: "us" } }}
         >
-          <input className="text map-search-input" placeholder="Search an address to add a delivery site…" />
+          <input ref={inputRef} className="text map-search-input" placeholder="Search an address to add a delivery site…" />
         </Autocomplete>
       </div>
     </>

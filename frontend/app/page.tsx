@@ -81,6 +81,14 @@ export default function Home() {
       );
       return;
     }
+    // Don't add a second marker at (essentially) the same spot as an existing one.
+    const dup = stops.find(
+      (s) => s.id !== "depot" && Math.abs(s.lat - lat) < 3e-4 && Math.abs(s.lng - lng) < 3e-4
+    );
+    if (dup) {
+      setWarning(`"${dup.name}" is already on the run at that location.`);
+      return;
+    }
     setWarning(null);
     const id = `s${Date.now()}`;
     setStops((prev) => {
