@@ -107,14 +107,20 @@ RouteMind is two programs, so it deploys as two services (both have free tiers a
 
 1. In Vercel, **Import** the same GitHub repo.
 2. Set **Root Directory** to `frontend`.
-3. Add an environment variable **`NEXT_PUBLIC_BACKEND_URL`** = your Render URL from step 1 (set it *before* deploying — it's baked in at build time).
+3. Add two environment variables (set them *before* deploying — `NEXT_PUBLIC_*` vars are baked in at build time):
+   - **`NEXT_PUBLIC_BACKEND_URL`** = your Render URL from step 1.
+   - **`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`** = your Google Maps key (see below).
 4. Deploy. Vercel auto-detects Next.js; open the resulting URL and you have the live app.
 
-CORS is already open on the backend, so the Vercel frontend can call the Render backend out of the box. To point a local frontend at a deployed backend instead, set the same variable in `frontend/.env.local`.
+CORS is already open on the backend, so the Vercel frontend can call the Render backend out of the box. To point a local frontend at a deployed backend instead, set the same variables in `frontend/.env.local`.
+
+### Google Maps key
+
+The map uses Google Maps. Create an API key in **Google Cloud** with **billing enabled**, and enable these APIs: **Maps JavaScript API**, **Directions API**, **Places API**, **Geocoding API**. Put the key in `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (locally in `frontend/.env.local`, and in Vercel). Restrict the key to your Vercel domain and `localhost` for safety. Without a key, the app loads but the map area shows a "needs an API key" message.
 
 ## Tech stack
 
-- Frontend: Next.js 14, TypeScript, React, Leaflet with OpenStreetMap tiles.
+- Frontend: Next.js 14, TypeScript, React, and **Google Maps** — real street-by-street routing (Directions API), address search that auto-drops a point (Places + Geocoding), and land-only clicks (reverse geocoding).
 - Backend: FastAPI (Python) with Google OR-Tools for the optimization, LangGraph for the agent graph, a fast hosted language model (Claude) for the agents, OSRM for real road distances, and scikit-learn for the learned service-time model.
 - Deploy: Render (backend) + Vercel (frontend).
 
@@ -146,7 +152,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000 and you will see the map with seeded stops. Click Optimize.
+Add your `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` to `.env.local` (see [Google Maps key](#google-maps-key)) so the map renders. Then open http://localhost:3000 — you'll see the seeded stops on a Google map. Click Optimize.
 
 ## Project structure
 

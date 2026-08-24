@@ -67,8 +67,9 @@ export default function Home() {
   }, []);
 
   // useCallback keeps this reference stable while `stops` is unchanged, so the
-  // memoized map does not re-render on every keystroke in the chat.
-  const addStop = useCallback((lat: number, lng: number) => {
+  // memoized map does not re-render on every keystroke in the chat. `name` is
+  // supplied when a site is added from an address search.
+  const addStop = useCallback((lat: number, lng: number, name?: string) => {
     // Only allow sites inside the service area (Northern California / Bay Area).
     const base = stops.find((s) => s.id === "depot") ?? stops[0];
     const dist = base ? milesBetween(base.lat, base.lng, lat, lng) : 0;
@@ -84,10 +85,10 @@ export default function Home() {
     const id = `s${Date.now()}`;
     setStops((prev) => {
       const siteCount = prev.filter((s) => s.id !== "depot").length;
-      return [...prev, { id, name: `Delivery site ${siteCount + 1}`, lat, lng }];
+      return [...prev, { id, name: name || `Delivery site ${siteCount + 1}`, lat, lng }];
     });
     clearRun();
-    setEditingId(id); // drop the new site straight into rename mode
+    setEditingId(name ? null : id); // named (from address) sites don't need rename mode
   }, [stops, clearRun]);
 
   const removeStop = (id: string) => {
@@ -286,6 +287,7 @@ export default function Home() {
             orderedStopIds={route?.ok ? route.ordered_stop_ids : undefined}
             returnedToStart={route?.returned_to_start}
             onAdd={addStop}
+            onWarn={setWarning}
             serviceRadiusMeters={SERVICE_RADIUS_METERS}
           />
           {warning && (
@@ -296,7 +298,7 @@ export default function Home() {
             </div>
           )}
           <div className="hint">
-            Click inside the shaded area to add a delivery site (Northern California, within {SERVICE_RADIUS_MILES} mi).
+            Search an address, or click on land inside the shaded area (Northern California, within {SERVICE_RADIUS_MILES} mi).
           </div>
         </div>
 
