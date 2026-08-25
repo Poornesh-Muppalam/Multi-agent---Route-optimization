@@ -123,8 +123,8 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
     return pts.length > 1 ? pts : null;
   }, [directions]);
 
-  // Drive the vehicle marker smoothly along the route (loops), updating the
-  // marker directly so we don't re-render React every frame.
+  // Drive the vehicle arrow ONCE from the warehouse along the route, then stop
+  // (no looping). Updates the marker directly so we don't re-render each frame.
   useEffect(() => {
     if (!routePath || routePath.length < 2) return;
     const sph = google.maps.geometry.spherical;
@@ -133,7 +133,7 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
       cum[i] = cum[i - 1] + sph.computeDistanceBetween(routePath[i - 1], routePath[i]);
     }
     const total = cum[cum.length - 1] || 1;
-    const duration = 12000; // one full pass of the route
+    const duration = 9000; // a single pass of the route
 
     const posAt = (f: number) => {
       const d = f * total;
@@ -146,12 +146,24 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
       return sph.interpolate(routePath[i0], routePath[i1], lf);
     };
 
+    const arrow = (rotation: number) => ({
+      path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+      scale: 6, fillColor: "#1a73e8", fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2, rotation,
+    });
+
+    // Start parked at the warehouse, pointing toward the first turn.
+    const eps = 0.005;
+    vehicleRef.current?.setPosition(posAt(0));
+    vehicleRef.current?.setIcon(arrow(sph.computeHeading(posAt(0), posAt(eps))));
+
     let startT = 0;
     const tick = (now: number) => {
       if (!startT) startT = now;
-      const f = ((now - startT) % duration) / duration;
+      const f = Math.min(1, (now - startT) / duration);
+      const heading = sph.computeHeading(posAt(Math.max(0, f - eps)), posAt(Math.min(1, f + eps)));
       vehicleRef.current?.setPosition(posAt(f));
-      rafRef.current = requestAnimationFrame(tick);
+      vehicleRef.current?.setIcon(arrow(heading));
+      if (f < 1) rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
@@ -253,7 +265,7 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
           </>
         )}
 
-        {/* The moving delivery vehicle (Google-style blue dot) */}
+        {/* The delivery vehicle: a directional arrow that drives once from base */}
         {routePath && (
           <Marker
             position={{ lat: routePath[0].lat(), lng: routePath[0].lng() }}
@@ -261,12 +273,13 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
             onLoad={(m) => (vehicleRef.current = m)}
             onUnmount={() => (vehicleRef.current = null)}
             icon={{
-              path: google.maps.SymbolPath.CIRCLE,
-              scale: 7,
+              path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+              scale: 6,
               fillColor: "#1a73e8",
               fillOpacity: 1,
               strokeColor: "#ffffff",
-              strokeWeight: 3,
+              strokeWeight: 2,
+              rotation: 0,
             }}
           />
         )}
