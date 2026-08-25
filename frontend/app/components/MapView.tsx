@@ -16,11 +16,12 @@ import type { Stop } from "../lib/types";
 const LIBRARIES: ("places" | "geometry")[] = ["places", "geometry"];
 const FALLBACK_CENTER = { lat: 37.3382, lng: -121.8863 };
 
-// Reverse-geocode result types that mean "this is a real place on land".
+// Reverse-geocode types that only exist on developed land (a real road or
+// address at the click). Water — the Pacific and the Bay — has none of these;
+// Google only returns generic "plus_code"/"locality" results there, so we
+// deliberately exclude those to keep clicks on land.
 const LAND_TYPES = new Set([
   "street_address", "route", "premise", "subpremise", "intersection",
-  "plus_code", "neighborhood", "sublocality", "locality", "postal_code",
-  "point_of_interest", "establishment", "park", "airport",
 ]);
 
 interface Props {
@@ -192,7 +193,7 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
         const onLand =
           status === "OK" && !!results && results.some((r) => (r.types || []).some((t) => LAND_TYPES.has(t)));
         if (onLand) onAdd(lat, lng);
-        else onWarn("That spot looks like water — please pick a location on land.");
+        else onWarn("No street there — that looks like water. Click on a road/address on land, or use the address search.");
       });
     },
     [onAdd, onWarn]
