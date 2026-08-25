@@ -1,18 +1,19 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   GoogleMap,
   Marker,
   Circle,
-  DirectionsRenderer,
+  Polyline,
   Autocomplete,
   useJsApiLoader,
 } from "@react-google-maps/api";
 import type { Stop } from "../lib/types";
 
-// Static so the loader doesn't re-init on every render.
-const LIBRARIES: ("places")[] = ["places"];
+// Static so the loader doesn't re-init on every render. "geometry" powers the
+// smooth vehicle interpolation along the route.
+const LIBRARIES: ("places" | "geometry")[] = ["places", "geometry"];
 const FALLBACK_CENTER = { lat: 37.3382, lng: -121.8863 };
 
 // Reverse-geocode result types that mean "this is a real place on land".
@@ -65,11 +66,12 @@ function MapView(props: Props) {
 }
 
 function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, serviceRadiusMeters }: Props) {
-  const mapRef = useRef<google.maps.Map | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
   const acRef = useRef<google.maps.places.Autocomplete | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lastPlaceRef = useRef<string | null>(null);
+  const vehicleRef = useRef<google.maps.Marker | null>(null);
+  const rafRef = useRef<number | null>(null);
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
 
   const base = stops.find((s) => s.id === "depot") ?? stops[0];
@@ -111,9 +113,52 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
     return () => { cancelled = true; };
   }, [orderedStopIds, stops, returnedToStart]);
 
+  // A detailed, street-accurate path (every step's points) for the blue line
+  // and the moving vehicle.
+  const routePath = useMemo<google.maps.LatLng[] | null>(() => {
+    const route = directions?.routes?.[0];
+    if (!route) return null;
+    const pts: google.maps.LatLng[] = [];
+    route.legs.forEach((leg) => leg.steps.forEach((step) => (step.path || []).forEach((p) => pts.push(p))));
+    return pts.length > 1 ? pts : null;
+  }, [directions]);
+
+  // Drive the vehicle marker smoothly along the route (loops), updating the
+  // marker directly so we don't re-render React every frame.
+  useEffect(() => {
+    if (!routePath || routePath.length < 2) return;
+    const sph = google.maps.geometry.spherical;
+    const cum: number[] = [0];
+    for (let i = 1; i < routePath.length; i++) {
+      cum[i] = cum[i - 1] + sph.computeDistanceBetween(routePath[i - 1], routePath[i]);
+    }
+    const total = cum[cum.length - 1] || 1;
+    const duration = 12000; // one full pass of the route
+
+    const posAt = (f: number) => {
+      const d = f * total;
+      let i = 1;
+      while (i < cum.length && cum[i] < d) i++;
+      const i0 = Math.max(0, i - 1);
+      const i1 = Math.min(routePath.length - 1, i);
+      const seg = cum[i1] - cum[i0] || 1;
+      const lf = Math.max(0, Math.min(1, (d - cum[i0]) / seg));
+      return sph.interpolate(routePath[i0], routePath[i1], lf);
+    };
+
+    let startT = 0;
+    const tick = (now: number) => {
+      if (!startT) startT = now;
+      const f = ((now - startT) % duration) / duration;
+      vehicleRef.current?.setPosition(posAt(f));
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [routePath]);
+
   const onMapLoad = useCallback(
     (map: google.maps.Map) => {
-      mapRef.current = map;
       if (stops.length > 1) {
         const bounds = new google.maps.LatLngBounds();
         stops.forEach((s) => bounds.extend({ lat: s.lat, lng: s.lng }));
@@ -133,9 +178,7 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
       if (!geocoderRef.current) geocoderRef.current = new google.maps.Geocoder();
       geocoderRef.current.geocode({ location: { lat, lng } }, (results, status) => {
         const onLand =
-          status === "OK" &&
-          !!results &&
-          results.some((r) => (r.types || []).some((t) => LAND_TYPES.has(t)));
+          status === "OK" && !!results && results.some((r) => (r.types || []).some((t) => LAND_TYPES.has(t)));
         if (onLand) onAdd(lat, lng);
         else onWarn("That spot looks like water — please pick a location on land.");
       });
@@ -146,17 +189,15 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
   const onPlaceChanged = useCallback(() => {
     const place = acRef.current?.getPlace();
     const loc = place?.geometry?.location;
-    // A fully-resolved selection has both geometry and a place_id. Google fires
-    // this event twice on Enter (a rough guess, then the exact place); require
-    // both, and ignore a repeat of the same place_id, so one address adds once.
+    // Google fires this twice on Enter (a rough guess, then the exact place);
+    // require both geometry and a place_id, and ignore a repeat of the same id.
     if (!loc || !place?.place_id) {
       onWarn("Pick an address from the dropdown suggestions to add it.");
       return;
     }
     if (place.place_id === lastPlaceRef.current) return;
     lastPlaceRef.current = place.place_id;
-    const name =
-      place.name || place.formatted_address?.split(",")[0] || "New delivery site";
+    const name = place.name || place.formatted_address?.split(",")[0] || "New delivery site";
     onAdd(loc.lat(), loc.lng(), name);
     if (inputRef.current) inputRef.current.value = "";
   }, [onAdd, onWarn]);
@@ -187,13 +228,45 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
           />
         )}
 
-        {directions && (
-          <DirectionsRenderer
-            directions={directions}
-            options={{
-              suppressMarkers: true,
-              preserveViewport: true,
-              polylineOptions: { strokeColor: "#ef9f0d", strokeOpacity: 0.95, strokeWeight: 5 },
+        {/* Google-style blue navigation route: darker casing under, blue on top */}
+        {routePath && (
+          <>
+            <Polyline
+              path={routePath}
+              options={{ strokeColor: "#1967d2", strokeOpacity: 1, strokeWeight: 9, zIndex: 1, clickable: false }}
+            />
+            <Polyline
+              path={routePath}
+              options={{
+                strokeColor: "#4285F4", strokeOpacity: 1, strokeWeight: 5, zIndex: 2, clickable: false,
+                icons: [
+                  {
+                    icon: {
+                      path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                      scale: 2.4, fillColor: "#ffffff", fillOpacity: 1, strokeColor: "#1967d2", strokeWeight: 1,
+                    },
+                    repeat: "150px",
+                  },
+                ],
+              }}
+            />
+          </>
+        )}
+
+        {/* The moving delivery vehicle (Google-style blue dot) */}
+        {routePath && (
+          <Marker
+            position={{ lat: routePath[0].lat(), lng: routePath[0].lng() }}
+            zIndex={1200}
+            onLoad={(m) => (vehicleRef.current = m)}
+            onUnmount={() => (vehicleRef.current = null)}
+            icon={{
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 7,
+              fillColor: "#1a73e8",
+              fillOpacity: 1,
+              strokeColor: "#ffffff",
+              strokeWeight: 3,
             }}
           />
         )}
@@ -204,7 +277,7 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
             <Marker
               key={s.id}
               position={{ lat: s.lat, lng: s.lng }}
-              zIndex={isDepot ? 999 : 1}
+              zIndex={isDepot ? 999 : 3}
               icon={{
                 path: google.maps.SymbolPath.CIRCLE,
                 scale: 13,
