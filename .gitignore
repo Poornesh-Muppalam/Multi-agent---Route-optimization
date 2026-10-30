@@ -19,3 +19,6 @@ backend/.env
 
 # Generated demo trip log (recreated deterministically on first run)
 trips.json
+
+# Local backup of the report PDF (not for the repo)
+TECHNICAL_REPORT.pdf.bak

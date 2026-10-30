@@ -1,0 +1,97 @@
+{
+  "name": "RouteMind Chat Brain",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "routemind-chat",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "webhook-in",
+      "name": "Chat Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-40, 300],
+      "webhookId": "routemind-chat"
+    },
+    {
+      "parameters": {
+        "model": "claude-haiku-4-5-20251001",
+        "options": {
+          "maxTokensToSample": 500,
+          "temperature": 0
+        }
+      },
+      "id": "anthropic-model",
+      "name": "Anthropic Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [220, 480],
+      "credentials": {
+        "anthropicApi": {
+          "id": "REPLACE_WITH_YOUR_ANTHROPIC_CREDENTIAL_ID",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Run state (JSON): {{ JSON.stringify($json.body) }}\n\nDispatcher request: {{ $json.body.message || '' }}",
+        "options": {
+          "systemMessage": "You are RouteMind's chat brain for a food-bank delivery dispatcher. You turn ONE plain-English request into either a structured edit to the delivery run, OR an answer to a question about the run.\n\nTimes are minutes from midnight (9:00 am = 540, noon = 720, 2:30 pm = 870). Use sentinels for unused fields: -1 for numbers, \"none\" for position/return_value, \"\" for site_query. site_query is the site the user named, copied loosely.\n\nChoose kind:\n- remove: drop a site (needs site_query).\n- set_window: set a serving window (site_query + window_start_min + window_end_min), or clear it (site_query + clear_window true).\n- set_service: set on-site unload minutes (site_query + service_min).\n- reorder: move a site (site_query + position first|last).\n- set_return: whether the van returns to base (return_value true|false).\n- reoptimize: just re-run the solver.\n- ask: the user is asking a question or wants advice about the run rather than requesting an edit. Write a helpful 2-4 sentence answer in the top-level \"reply\" field using the run state. Be honest that live traffic is NOT included in the estimates.\n- unknown: you can't tell what to change; put a short suggestion in \"reply\".\n\nThe run state JSON contains stops (each with name, service_min, optional window [start,end]), return_to_start, and result (the last solved route with total_distance_m, total_time_min, ordered_stop_ids, arrivals_min) which may be null.\n\nRespond with ONLY a JSON object, no markdown fences and no prose, with EXACTLY these keys:\n{\n  \"kind\": one of remove|set_window|set_service|reorder|set_return|reoptimize|ask|unknown,\n  \"reply\": string (\"\" for edits; the answer/suggestion for ask/unknown),\n  \"action\": {\n    \"kind\": same as top-level kind,\n    \"site_query\": string,\n    \"window_start_min\": integer,\n    \"window_end_min\": integer,\n    \"clear_window\": boolean,\n    \"service_min\": integer,\n    \"position\": \"first\"|\"last\"|\"none\",\n    \"return_value\": \"true\"|\"false\"|\"none\",\n    \"note\": string\n  }\n}\nFor edits, set \"reply\" to \"\" and fill \"action\". For ask/unknown, fill \"reply\" and leave action fields at their sentinels."
+        }
+      },
+      "id": "ai-agent",
+      "name": "Interpret (Claude)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Turn the model's text output into a clean JSON object for the frontend.\nconst item = $input.first().json;\nlet out = item.output ?? item.text ?? item.response ?? '';\nif (out && typeof out === 'object') {\n  return [{ json: out }];\n}\nout = String(out).trim();\nconst fence = out.match(/```(?:json)?\\s*([\\s\\S]*?)```/i);\nif (fence) out = fence[1].trim();\nlet parsed;\ntry {\n  parsed = JSON.parse(out);\n} catch (e) {\n  parsed = { kind: 'unknown', reply: \"Sorry, I couldn't parse that request. Try 'drop the senior center' or 'put the shelter first'.\", action: null };\n}\nif (!parsed.kind) parsed.kind = 'unknown';\nif (parsed.reply == null) parsed.reply = '';\nreturn [{ json: parsed }];"
+      },
+      "id": "parse-json",
+      "name": "Parse JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond to Frontend",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [740, 300]
+    }
+  ],
+  "connections": {
+    "Chat Webhook": {
+      "main": [[{ "node": "Interpret (Claude)", "type": "main", "index": 0 }]]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [[{ "node": "Interpret (Claude)", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Interpret (Claude)": {
+      "main": [[{ "node": "Parse JSON", "type": "main", "index": 0 }]]
+    },
+    "Parse JSON": {
+      "main": [[{ "node": "Respond to Frontend", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "description": "RouteMind chat brain: interprets a dispatcher's plain-English message into a structured route edit (or answers a question). The RouteMind backend applies edits and re-solves with OR-Tools."
+  }
+}

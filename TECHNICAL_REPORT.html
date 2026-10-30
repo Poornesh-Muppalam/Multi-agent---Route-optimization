@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RouteMind — Technical Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root{
+    --bg:#fbf7f0; --panel:#fffdfa; --panel2:#f6efe4; --line:#ece1d0; --line2:#e0d3bf;
+    --text:#1e2634; --muted:#8a7d6b; --amber:#f59e0b; --coral:#fb7185; --teal:#0fb389; --ink:#14181c;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:"Inter",system-ui,sans-serif;font-size:12.5px;line-height:1.55;-webkit-font-smoothing:antialiased;}
+  .page{max-width:900px;margin:0 auto;padding:40px 46px;}
+  h1,h2,h3{font-family:"Bricolage Grotesque","Inter",sans-serif;line-height:1.2;color:var(--ink);}
+  h1{font-size:30px;font-weight:700;letter-spacing:-0.5px;margin:0 0 4px;
+    background:linear-gradient(96deg,var(--amber),var(--coral) 55%,var(--teal));
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+  h2{font-size:18px;font-weight:700;margin:30px 0 10px;padding-top:10px;border-top:2px solid var(--line);}
+  h3{font-size:14px;font-weight:600;margin:18px 0 6px;color:var(--amber);}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 6px;}
+  .meta{color:var(--muted);font-size:11.5px;margin:0 0 18px;}
+  p{margin:8px 0;}
+  ul,ol{margin:8px 0;padding-left:20px;}
+  li{margin:3px 0;}
+  code{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:5px;padding:0.5px 5px;color:#7a5a10;}
+  pre{background:#1e2634;color:#e9edf5;border-radius:10px;padding:12px 14px;overflow:auto;font-size:10.5px;
+    line-height:1.5;font-family:ui-monospace,"SF Mono",Menlo,monospace;}
+  pre code{background:none;border:none;color:inherit;padding:0;}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:11.5px;}
+  th,td{border:1px solid var(--line2);padding:6px 9px;text-align:left;vertical-align:top;}
+  th{background:var(--panel2);font-weight:600;}
+  .fig{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin:16px 0;
+    box-shadow:0 1px 3px rgba(120,90,30,.05);break-inside:avoid;page-break-inside:avoid;}
+  .fig .cap{font-family:"Bricolage Grotesque",sans-serif;font-weight:600;font-size:12.5px;color:var(--teal);
+    margin:0 0 8px;text-transform:uppercase;letter-spacing:.6px;}
+  .mermaid{display:flex;justify-content:center;}
+  .mermaid svg{max-width:100%;height:auto;}
+  .tag{display:inline-block;font-size:10.5px;font-weight:600;color:var(--teal);background:#e1f5ef;
+    border:1px solid #bfe9dc;border-radius:999px;padding:1px 9px;margin-right:4px;}
+  .pill{display:inline-block;font-size:10.5px;font-weight:700;color:var(--amber);background:#fdf0d9;
+    border:1px solid #f4dcae;border-radius:999px;padding:1px 9px;}
+  h2,h3{break-after:avoid;}
+  @page{size:A4;margin:14mm 12mm;}
+  @media print{ .page{padding:0 2mm;} }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>RouteMind — Technical Report</h1>
+  <p class="sub">AI-assisted, multi-agent delivery-route optimization for a food bank</p>
+  <p class="sub" style="font-weight:600;color:var(--ink);margin-top:8px;">
+    Author: Poornesh Muppalam &nbsp;·&nbsp; Professor: Prashant Khanduri
+  </p>
+  <p class="meta">
+    <span class="tag">Last-mile logistics</span>
+    <span class="tag">VRP with time windows</span>
+    <span class="tag">Full-stack</span>
+    &nbsp; End-to-end technical overview — architecture, subsystems, development journey,
+    engineering decisions, API contracts, configuration, and limitations.
+  </p>
+
+  <h2>1. Executive Summary</h2>
+  <p>RouteMind plans a food bank's daily delivery van run. A dispatcher adds community delivery
+  sites (by address search or map click), sets each site's <b>serving window</b> and
+  <b>on-site drop time</b>, chooses when the van departs, and asks the system to build the
+  shortest run that still reaches every site inside its window. The result is drawn on a live
+  map as a turn-by-turn route with an estimated arrival (ETA) at each stop.</p>
+  <p>The core philosophy is a strict split: <b>deterministic math stays authoritative</b> and
+  <b>language models do only what they are genuinely good at.</b></p>
+  <ul>
+    <li><b>Constraint solver (Google OR-Tools)</b> computes the actual visiting order, honoring
+      time windows, drop times, departure time, and optional ordering pins. Road distances/times
+      come from OSRM.</li>
+    <li><b>A crew of five agents (LangGraph)</b> wraps the solver with real analysis: input
+      validation, pre-solve conflict prediction, solving, <b>auto-repair</b> of infeasible runs,
+      and advice.</li>
+    <li><b>Natural-language chat</b> lets the dispatcher edit the run or ask questions; an LLM
+      interprets (with a rule-based fallback) and the deterministic edits are applied + re-solved.</li>
+  </ul>
+  <p>The app runs <b>free and offline-capable</b>: with no API key the chat uses a rule-based
+  parser and agents use computed text; with a free LLM key (Google Gemini by default) the same
+  flows gain natural-language quality.</p>
+
+  <h2>2. System Architecture</h2>
+  <div class="fig">
+    <p class="cap">Figure 1 — System architecture &amp; data flow</p>
+    <div class="mermaid">
+flowchart LR
+  subgraph BR["BROWSER · Next.js / React / TypeScript"]
+    direction TB
+    P["page.tsx<br/>state &amp; flows"]
+    M["MapView.tsx<br/>Google Maps"]
+    A["lib/api.ts<br/>REST + SSE client"]
+    P --> A
+  end
+  subgraph BE["BACKEND · FastAPI"]
+    direction TB
+    APP["app.py<br/>endpoints"]
+    SOL["solver.py<br/>OR-Tools"]
+    AG["agents.py<br/>crew + LLM adapter"]
+    CH["chat.py<br/>interpret / apply"]
+  end
+  GM(["Google Maps Platform<br/>Places · Geocoding · Directions"])
+  OSRM(["OSRM<br/>road distances / times"])
+  LLM(["LLM provider<br/>Gemini · Groq · Ollama · Claude"])
+  A -- "HTTP / SSE" --> APP
+  M -- "Maps JS" --> GM
+  APP --> SOL
+  APP --> AG
+  APP --> CH
+  AG --> SOL
+  CH --> SOL
+  SOL --> OSRM
+  AG --> LLM
+  CH --> LLM
+  classDef fe fill:#fdf0d9,stroke:#f4dcae,color:#1e2634;
+  classDef be fill:#e1f5ef,stroke:#bfe9dc,color:#1e2634;
+  classDef ext fill:#fee7ea,stroke:#f6c6cd,color:#1e2634;
+  class P,M,A fe; class APP,SOL,AG,CH be; class GM,OSRM,LLM ext;
+    </div>
+  </div>
+
+  <h3>Technology stack</h3>
+  <table>
+    <tr><th>Layer</th><th>Technology</th></tr>
+    <tr><td>Frontend</td><td>Next.js 14 (App Router), React 18.3, TypeScript 5.5</td></tr>
+    <tr><td>Maps</td><td><code>@react-google-maps/api</code> 2.20 — Maps JS, Places (Autocomplete), Geocoding, Directions, Geometry</td></tr>
+    <tr><td>Backend</td><td>FastAPI, Uvicorn, Pydantic 2</td></tr>
+    <tr><td>Optimization</td><td>Google OR-Tools (CP routing)</td></tr>
+    <tr><td>Routing data</td><td>OSRM public server + straight-line fallback</td></tr>
+    <tr><td>Agents</td><td>LangGraph (linear state graph)</td></tr>
+    <tr><td>LLM</td><td>OpenAI-compatible adapter — default Google Gemini <code>gemini-flash-lite-latest</code>; Anthropic fallback</td></tr>
+  </table>
+
+  <h2>3. Backend Subsystems</h2>
+
+  <h3>3.1 Solver (<code>solver.py</code>) — the honest core</h3>
+  <ul>
+    <li><b>Matrices:</b> <code>road_matrices()</code> fetches real driving durations/distances from
+      OSRM (≤100 stops); on any failure, falls back to a haversine straight-line estimate. Reports
+      <code>distance_source: road | estimate</code>.</li>
+    <li><b>OR-Tools model:</b> one vehicle, depot = node 0; arc cost = travel time + origin drop time.</li>
+    <li><b>Time dimension &amp; departure:</b> start cumul fixed to <code>depart_min</code> (defaults
+      to "now"); windows are range constraints; ETAs read back per stop.</li>
+    <li><b>Horizon fix:</b> max cumulative time = <b>departure + 24h</b> (not a midnight ceiling),
+      so late/long runs don't falsely fail.</li>
+    <li><b>Pins:</b> "first/last" enforced on the Time dimension's cumulative vars.</li>
+  </ul>
+
+  <div class="fig">
+    <p class="cap">Figure 2 — Solve &amp; ETA pipeline</p>
+    <div class="mermaid">
+flowchart LR
+  IN["stops + windows<br/>+ depart_min"] --> MX{"OSRM<br/>available?"}
+  MX -- yes --> ROAD["Road matrices<br/>(durations, distances)"]
+  MX -- no --> EST["Straight-line<br/>estimate"]
+  ROAD --> OR["OR-Tools<br/>routing model"]
+  EST --> OR
+  OR --> TD["Time dimension<br/>start = departure<br/>cap = departure + 24h"]
+  TD --> WIN["Apply windows<br/>+ ordering pins"]
+  WIN --> SEARCH["Search best order<br/>(guided local search)"]
+  SEARCH --> OUT["order · ETAs ·<br/>distance · drive time"]
+  classDef b fill:#e1f5ef,stroke:#bfe9dc,color:#1e2634;
+  classDef a fill:#fdf0d9,stroke:#f4dcae,color:#1e2634;
+  class IN,ROAD,EST,OR,TD,WIN,SEARCH,OUT b; class MX a;
+    </div>
+  </div>
+
+  <h3>3.2 Agent crew (<code>agents.py</code>) — analysis, judgment, self-repair</h3>
+  <p>A LangGraph linear pipeline; <b>each node is backed by computation</b> (works with no LLM key —
+  the LLM only narrates). The Diagnostician is the standout: it <b>reacts</b> to failures.</p>
+
+  <div class="fig">
+    <p class="cap">Figure 3 — Agent crew &amp; Diagnostician auto-repair fix ladder</p>
+    <div class="mermaid">
+flowchart TD
+  S(["Optimize with agents"]) --> V["1 · Validator<br/>out-of-area · duplicates ·<br/>outliers · bad drop times"]
+  V --> F["2 · Feasibility Analyst<br/>predict window conflicts<br/>before solving"]
+  F --> O["3 · Optimizer<br/>OR-Tools solve"]
+  O --> D{"Solve<br/>feasible?"}
+  D -- yes --> Q["4 · Diagnostician<br/>quality judge<br/>(flag costly site)"]
+  D -- no --> R1{"Shift departure<br/>earlier?"}
+  R1 -- works --> FIX["Apply fix<br/>+ re-solve"]
+  R1 -- no --> R2{"Widen tightest<br/>window?"}
+  R2 -- works --> FIX
+  R2 -- no --> R3{"Drop fewest<br/>sites?"}
+  R3 -- works --> FIX
+  R3 -- no --> FAIL["Report:<br/>couldn't auto-repair"]
+  Q --> ADV["5 · Advisor<br/>synthesize + recommend"]
+  FIX --> ADV
+  FAIL --> ADV
+  ADV --> OUT(["Stream result<br/>+ repair preview"])
+  classDef ag fill:#e1f5ef,stroke:#bfe9dc,color:#1e2634;
+  classDef dec fill:#fdf0d9,stroke:#f4dcae,color:#1e2634;
+  classDef fix fill:#fee7ea,stroke:#f6c6cd,color:#1e2634;
+  class V,F,O,Q,ADV ag; class D,R1,R2,R3 dec; class FIX,FAIL fix;
+    </div>
+  </div>
+
+  <p><b>LLM provider adapter.</b> <code>_get_client()</code> resolves in priority order:
+  OpenAI-compatible (<code>LLM_BASE_URL</code> + <code>LLM_API_KEY</code> → Groq / Gemini / Ollama /
+  OpenAI), then Anthropic, else <code>None</code>. <code>_llm()</code> returns short text;
+  <code>_llm_json()</code> returns a parsed object via JSON mode; <code>brain_info()</code> reports
+  the active brain for the UI badge.</p>
+
+  <h3>3.3 Chat (<code>chat.py</code>)</h3>
+  <div class="fig">
+    <p class="cap">Figure 4 — Chat turn: interpret → apply → re-solve / answer</p>
+    <div class="mermaid">
+flowchart TD
+  U(["Dispatcher message"]) --> I["Interpret<br/>LLM (JSON) or rule-based parser"]
+  I --> K{"kind?"}
+  K -- "ask" --> ANS["Answer from<br/>computed run context"]
+  K -- "edit" --> AP["apply_action<br/>(resolve site + mutate)"]
+  AP --> SV["solve before / after"]
+  SV --> EX["Explain<br/>cost delta (mi · min)"]
+  K -- "unknown" --> SG["Suggest a phrasing"]
+  ANS --> OUT(["Reply shown in chat"])
+  EX --> OUT
+  SG --> OUT
+  classDef c fill:#e1f5ef,stroke:#bfe9dc,color:#1e2634;
+  classDef d fill:#fdf0d9,stroke:#f4dcae,color:#1e2634;
+  class I,ANS,AP,SV,EX,SG c; class K d;
+    </div>
+  </div>
+  <p>Edit kinds: <code>remove · set_window · set_service · reorder · set_return · reoptimize · ask ·
+  unknown</code>. An LLM path is used when a key is present; otherwise a regex parser handles times
+  ("8 to 9 am") and site resolution by shared-word matching. Answers are always honest that live
+  traffic is not modeled.</p>
+
+  <h3>3.4 API (<code>app.py</code>)</h3>
+  <table>
+    <tr><th>Method &amp; path</th><th>Purpose</th></tr>
+    <tr><td><code>GET /</code></td><td>Health check</td></tr>
+    <tr><td><code>POST /optimize</code></td><td>Raw solve ("Solver only")</td></tr>
+    <tr><td><code>POST /optimize/agents</code></td><td>Run the crew once, return final state</td></tr>
+    <tr><td><code>POST /optimize/agents/stream</code></td><td>Stream crew steps over <b>SSE</b>; final event carries the (possibly repaired) result + <code>repair</code></td></tr>
+    <tr><td><code>POST /chat</code></td><td>Full chat turn (interpret + apply / answer)</td></tr>
+    <tr><td><code>GET /chat/info</code></td><td>Active brain (Gemini / Groq / Claude / Ollama / Rules)</td></tr>
+    <tr><td><code>POST /chat/apply</code></td><td>Apply a pre-decided action + re-solve</td></tr>
+  </table>
+
+  <h2>4. Frontend Subsystems</h2>
+  <ul>
+    <li><b><code>page.tsx</code></b> — all app state and flows: add/remove/rename sites (service-area
+      &amp; duplicate guards), the ⚙ <b>per-site conditions editor</b> (drop time + serving window),
+      the <b>"Van leaves at" departure</b> control, Optimize-with-agents (SSE → live panel +
+      repair preview), Solver-only, and the chat (copy / retry / clear + brain badge).</li>
+    <li><b><code>MapView.tsx</code></b> — Google Maps via <code>useJsApiLoader</code>. Places
+      Autocomplete with a <b>geocoding fallback</b> (Enter without picking a suggestion still adds
+      the site); water-click rejection; markers numbered to match the run sheet (depot = "H");
+      Google-style route polyline + animated vehicle; <code>applyView()</code> framing + idle resize
+      fix (prevents world-zoom / grey bands).</li>
+    <li><b><code>lib/api.ts</code> / <code>lib/types.ts</code></b> — typed client
+      (<code>optimizeRoute</code>, <code>streamAgents</code> SSE reader, <code>sendChat</code>,
+      <code>applyAction</code>, <code>getChatBrain</code>) and shared contracts.</li>
+    <li><b><code>globals.css</code></b> — warm/vibrant theme via CSS variables (cream + amber +
+      coral + teal), Bricolage Grotesque headers, gradient wordmark; control panel on the left,
+      map on the right.</li>
+  </ul>
+
+  <h2>5. Development Journey</h2>
+  <div class="fig">
+    <p class="cap">Figure 5 — Development timeline</p>
+    <div class="mermaid">
+timeline
+  title RouteMind — evolution
+  Foundation : OR-Tools solver : LangGraph agents : Plain-English chat
+  Iteration 1 : Chat UX (copy / retry / clear) : n8n hybrid brain + proxy : Address &amp; reset fixes
+  Iteration 2 : Per-site conditions editor : Pin-numbering fix : Real-time ETAs + departure + horizon fix
+  Iteration 3 : Removed seed sites &amp; learning : Agent redesign with auto-repair
+  Iteration 4 : n8n to free Gemini (provider-agnostic) : chat brain badge : UI redesign : Map framing fix
+    </div>
+  </div>
+  <ol>
+    <li><b>Chat UX polish</b> — copy, retry-on-failure, clear chat.</li>
+    <li><b>n8n hybrid brain (later removed)</b> — n8n interprets, backend applies via new
+      <code>/chat/apply</code>; same-origin Next.js rewrite to bypass CORS; flexible response parser.</li>
+    <li><b>Address search &amp; reset fixes</b> — geocoding fallback; true reset-to-initial.</li>
+    <li><b>Per-site conditions</b> — ⚙ editor for window + drop time on any added site.</li>
+    <li><b>Pin numbering</b> — depot = "H", sites numbered from 1 in route order (matches run sheet).</li>
+    <li><b>Real-time ETA model</b> — editable departure ("leave now"), always-on ETAs, departure+24h horizon.</li>
+    <li><b>Scope trim</b> — removed default sites; removed the learning/unlearning feature.</li>
+    <li><b>Agent redesign</b> — five real analysts + Diagnostician auto-repair + preview.</li>
+    <li><b>n8n → free LLM</b> — provider-agnostic adapter, default Gemini; <code>/chat/info</code> + badge.</li>
+    <li><b>UI redesign</b> — panel to the left; "Result" box removed with essentials relocated; warm theme.</li>
+    <li><b>Map framing fix</b> — <code>applyView()</code> + idle resize + re-frame on stop changes.</li>
+  </ol>
+
+  <h2>6. Key Engineering Decisions &amp; Trade-offs</h2>
+  <ul>
+    <li><b>Math vs. language separation</b> — OR-Tools owns correctness; LLMs never compute the route.
+      Fast, reliable, auditable, and runnable with no LLM.</li>
+    <li><b>"Leave now" realism</b> — real ETAs can make morning windows infeasible in the afternoon
+      (correct). The editable departure + auto-repair make this usable, not a dead end.</li>
+    <li><b>Agents that earn their place</b> — narration-only nodes replaced with ones whose decisions
+      change outcomes.</li>
+    <li><b>Provider-agnostic LLM</b> — one OpenAI-compatible adapter for Gemini / Groq / Ollama /
+      OpenAI, by env vars alone (no lock-in, no subscription).</li>
+    <li><b>Graceful degradation</b> — no OSRM → estimate; no LLM → rules/templates; unfixable run →
+      honest message.</li>
+  </ul>
+
+  <h2>7. Configuration &amp; Running</h2>
+  <p><b>Backend</b> (<code>backend/.env</code>):</p>
+  <pre><code>LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+LLM_API_KEY=&lt;gemini key&gt;
+LLM_MODEL=gemini-flash-lite-latest
+OSRM_URL=https://router.project-osrm.org</code></pre>
+  <p>Run: <code>cd backend &amp;&amp; source .venv/bin/activate &amp;&amp; uvicorn app:app --port 8000</code></p>
+  <p><b>Frontend</b> (<code>frontend/.env.local</code>):</p>
+  <pre><code>NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=&lt;maps key, browser-only&gt;
+NEXT_PUBLIC_N8N_CHAT_URL=            # blank -&gt; built-in /chat</code></pre>
+  <p>Run: <code>cd frontend &amp;&amp; npm run dev</code> → <code>http://localhost:3000</code>.
+  Keys are separated by surface: the <b>Maps key is public</b> (browser, referrer-restricted); the
+  <b>LLM key is server-side only</b>.</p>
+
+  <h2>8. Known Limitations &amp; Future Work</h2>
+  <ul>
+    <li><b>Single vehicle</b> — multi-van fleet routing not yet modeled (OR-Tools supports it).</li>
+    <li><b>No live traffic</b> — OSRM gives typical, not live, times; ETAs are honest about this.</li>
+    <li><b>Public OSRM limits</b> — rate-limited; production should self-host; Diagnostician re-solves
+      are bounded to a few experiments.</li>
+    <li><b>Service area</b> — hard-coded to Northern California (≤130 mi of base).</li>
+    <li><b>Vestigial pieces</b> — <code>requirements.txt</code> still lists <code>scikit-learn</code>/<code>numpy</code>
+      (removed learning feature); the <code>n8n/</code> files and flexible chat parser remain though unused — harmless.</li>
+    <li><b>Chat scope</b> — one action per turn; compound requests handled sequentially.</li>
+  </ul>
+  <p><span class="pill">Next steps</span> &nbsp; Multi-van fleet routing · driver mobile run sheet ·
+  a genuine "learn actual drop times from completed deliveries" loop · self-hosted OSRM ·
+  traffic-aware provider · one-click apply of chat-suggested fixes.</p>
+
+  <p class="meta" style="margin-top:24px;border-top:1px solid var(--line);padding-top:10px;">
+    Prepared as an end-to-end technical overview of RouteMind. Behavior reflects the current
+    codebase: backend <code>solver.py</code> / <code>agents.py</code> / <code>chat.py</code> /
+    <code>app.py</code>; frontend <code>page.tsx</code> / <code>MapView.tsx</code> /
+    <code>lib/*</code> / <code>globals.css</code>.
+  </p>
+
+</div>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "base",
+    themeVariables: {
+      fontFamily: "Inter, sans-serif",
+      primaryColor: "#fffdfa", primaryBorderColor: "#e0d3bf", primaryTextColor: "#1e2634",
+      lineColor: "#c9a86a", tertiaryColor: "#f6efe4"
+    },
+    flowchart: { useMaxWidth: true, htmlLabels: true, curve: "basis" }
+  });
+</script>
+</body>
+</html>

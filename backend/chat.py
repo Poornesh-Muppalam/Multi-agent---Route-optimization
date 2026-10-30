@@ -75,9 +75,6 @@ def _blank_action() -> dict:
 
 
 async def _llm_interpret(message: str, stops: List[dict]) -> Optional[dict]:
-    client = agents._get_client()
-    if client is None:
-        return None
     site_list = ", ".join(f'"{s["name"]}"' for s in stops if s.get("id") != "depot")
     system = (
         "You turn a food-bank dispatcher's plain-English request into ONE structured "
@@ -87,24 +84,18 @@ async def _llm_interpret(message: str, stops: List[dict]) -> Optional[dict]:
         "the user named, copied loosely. Choose kind: remove, set_window, set_service, "
         "reorder (with position first/last), set_return (return_value true/false), "
         "reoptimize (just re-run), ask (the user is asking a question or wants advice "
-        "about the run rather than requesting a specific edit), or unknown."
+        "about the run rather than requesting a specific edit), or unknown. "
+        "Respond with ONLY a JSON object with these exact keys: "
+        "kind, site_query, window_start_min, window_end_min, clear_window, "
+        "service_min, position, return_value, note."
     )
     user = f"Delivery sites: {site_list or 'none'}.\nRequest: {message}"
-    try:
-        msg = await client.messages.create(
-            model=agents.MODEL,
-            max_tokens=300,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-            output_config={"format": {"type": "json_schema", "schema": ACTION_SCHEMA}},
-        )
-        text = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
-        data = json.loads(text)
-        action = _blank_action()
-        action.update({k: data[k] for k in action if k in data})
-        return action
-    except Exception:
+    data = await agents._llm_json(system, user)
+    if not data:
         return None
+    action = _blank_action()
+    action.update({k: data[k] for k in action if k in data})
+    return action
 
 
 # Rule-based fallback so the chat works with no API key.
@@ -459,9 +450,12 @@ def _template_answer(message: str, stops: List[dict], result: dict) -> str:
 
 
 async def answer_question(
-    message: str, stops: List[dict], return_to_start: bool, speed_kmph: float = 30.0
+    message: str, stops: List[dict], return_to_start: bool, speed_kmph: float = 30.0,
+    depart_min: Optional[int] = None,
 ) -> str:
-    result = solve_route(stops, return_to_start=return_to_start, speed_kmph=speed_kmph)
+    result = solve_route(
+        stops, return_to_start=return_to_start, speed_kmph=speed_kmph, depart_min=depart_min
+    )
     client = agents._get_client()
     if client is not None:
         text = await agents._llm(
@@ -479,23 +473,23 @@ async def answer_question(
     return _template_answer(message, stops, result)
 
 
-async def chat_turn(
-    message: str, stops: List[dict], return_to_start: bool, speed_kmph: float = 30.0
+async def apply_turn(
+    action: dict, stops: List[dict], return_to_start: bool, speed_kmph: float = 30.0,
+    depart_min: Optional[int] = None,
 ) -> dict:
-    action = await interpret(message, stops)
-
-    if action.get("kind") == "ask":
-        reply = await answer_question(message, stops, return_to_start, speed_kmph)
-        return {"ok": True, "kind": "ask", "reply": reply}
-
+    """The post-interpret half of a chat turn: apply a structured action, re-solve,
+    and explain the cost. Used both by chat_turn (local interpretation) and by the
+    /chat/apply endpoint, where an external brain (n8n) supplies the action."""
     new_stops, new_return, pins, summary, error = apply_action(action, stops, return_to_start)
 
     if error:
         return {"ok": False, "kind": action.get("kind", "unknown"), "reply": error}
 
-    before = solve_route(stops, return_to_start=return_to_start, speed_kmph=speed_kmph)
+    before = solve_route(
+        stops, return_to_start=return_to_start, speed_kmph=speed_kmph, depart_min=depart_min
+    )
     after = solve_route(
-        new_stops, return_to_start=new_return, speed_kmph=speed_kmph, pins=pins
+        new_stops, return_to_start=new_return, speed_kmph=speed_kmph, pins=pins, depart_min=depart_min
     )
 
     if not after.get("ok"):
@@ -516,3 +510,16 @@ async def chat_turn(
         "return_to_start": new_return,
         "result": after,
     }
+
+
+async def chat_turn(
+    message: str, stops: List[dict], return_to_start: bool, speed_kmph: float = 30.0,
+    depart_min: Optional[int] = None,
+) -> dict:
+    action = await interpret(message, stops)
+
+    if action.get("kind") == "ask":
+        reply = await answer_question(message, stops, return_to_start, speed_kmph, depart_min)
+        return {"ok": True, "kind": "ask", "reply": reply}
+
+    return await apply_turn(action, stops, return_to_start, speed_kmph, depart_min)

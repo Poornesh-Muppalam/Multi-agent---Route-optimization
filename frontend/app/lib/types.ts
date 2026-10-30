@@ -41,6 +41,36 @@ export interface ChatDelta {
   time_min: number;
 }
 
+// Which brain powers the chat, from GET /chat/info.
+export interface ChatBrain {
+  live: boolean;
+  provider: string;
+  label: string;
+  model: string | null;
+}
+
+// A structured edit, mirroring backend chat.ACTION_SCHEMA. Decided by the n8n
+// brain and handed to the backend's /chat/apply for the deterministic re-solve.
+export interface ChatAction {
+  kind: string;
+  site_query: string;
+  window_start_min: number;
+  window_end_min: number;
+  clear_window: boolean;
+  service_min: number;
+  position: "first" | "last" | "none";
+  return_value: "true" | "false" | "none";
+  note: string;
+}
+
+// What the n8n webhook returns: the interpreted kind, a natural-language reply
+// (for ask/unknown), and the structured action (for edits).
+export interface N8nInterpretResponse {
+  kind: string;
+  reply?: string;
+  action?: ChatAction;
+}
+
 // Response from POST /chat.
 export interface ChatResponse {
   ok: boolean;
@@ -59,30 +89,20 @@ export interface ChatMessage {
   text: string;
   delta?: ChatDelta;
   ok?: boolean;
+  // On a failed assistant reply, the user message that produced it — so the
+  // driver can retry the exact same request with one click.
+  retryText?: string;
 }
 
-// Phase 4: the learned service-time model.
-export interface ModelSite {
-  id: string;
-  name: string;
-  default_min: number | null;
-  learned_min: number | null;
-  trips: number;
-}
-
-export interface ModelSummary {
-  ok: boolean;
-  model_version: number;
-  total_trips: number;
-  mae_min: number | null;
-  sites: ModelSite[];
-}
-
-export interface UnlearnResponse {
-  ok: boolean;
-  removed: number;
-  reply: string;
-  model?: ModelSummary;
+// An auto-repair the Diagnostician applied to make an infeasible run solvable.
+// Previewed in the UI so the driver can keep or revert it.
+export interface Repair {
+  kind: "depart" | "widen_window" | "drop_site";
+  description: string;
+  original_reason: string;
+  stops: Stop[];
+  return_to_start: boolean;
+  depart_min: number;
 }
 
 // Events streamed from /optimize/agents/stream over Server-Sent Events.
@@ -96,6 +116,6 @@ export type AgentEvent =
       status: "done";
       message: string;
     }
-  | { type: "result"; result: RouteResult }
+  | { type: "result"; result: RouteResult; repair?: Repair | null }
   | { type: "done" }
   | { type: "error"; message: string };

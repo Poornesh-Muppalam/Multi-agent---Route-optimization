@@ -73,18 +73,22 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
   const lastPlaceRef = useRef<string | null>(null);
   const vehicleRef = useRef<google.maps.Marker | null>(null);
   const rafRef = useRef<number | null>(null);
+  const mapRef = useRef<google.maps.Map | null>(null);
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
 
   const base = stops.find((s) => s.id === "depot") ?? stops[0];
   const center = base ? { lat: base.lat, lng: base.lng } : FALLBACK_CENTER;
 
-  // Pin number = position along the route if solved, else position in the list.
+  // Pin number = the delivery site's position (route order if solved, else list
+  // order). The depot shows "H" and is NOT counted, so these match the run-sheet
+  // numbers exactly (sites start at 1).
   const positionById = new Map<string, number>();
-  if (orderedStopIds && orderedStopIds.length > 0) {
-    orderedStopIds.forEach((id, i) => positionById.set(id, i + 1));
-  } else {
-    stops.forEach((s, i) => positionById.set(s.id, i + 1));
-  }
+  const orderIds = orderedStopIds && orderedStopIds.length > 0 ? orderedStopIds : stops.map((s) => s.id);
+  let siteNo = 0;
+  orderIds.forEach((id) => {
+    if (id === "depot") return;
+    positionById.set(id, (siteNo += 1));
+  });
 
   // Fetch the real street-by-street route through the optimized order.
   useEffect(() => {
@@ -170,17 +174,36 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
   }, [routePath]);
 
-  const onMapLoad = useCallback(
-    (map: google.maps.Map) => {
-      if (stops.length > 1) {
-        const bounds = new google.maps.LatLngBounds();
-        stops.forEach((s) => bounds.extend({ lat: s.lat, lng: s.lng }));
-        map.fitBounds(bounds, 64);
-      }
-    },
+  // Frame the map: fit all stops when there are several, else center on the base
+  // at a city zoom. Never leaves the map at world-zoom.
+  const applyView = (map: google.maps.Map) => {
+    if (stops.length > 1) {
+      const bounds = new google.maps.LatLngBounds();
+      stops.forEach((s) => bounds.extend({ lat: s.lat, lng: s.lng }));
+      map.fitBounds(bounds, 64);
+    } else {
+      map.setCenter(center);
+      map.setZoom(12);
+    }
+  };
+
+  const onMapLoad = useCallback((map: google.maps.Map) => {
+    mapRef.current = map;
+    applyView(map);
+    // Flex containers get their real size just after mount; once the map is
+    // idle, tell it to re-measure and re-frame so it doesn't sit at world-zoom.
+    google.maps.event.addListenerOnce(map, "idle", () => {
+      google.maps.event.trigger(map, "resize");
+      applyView(map);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
+  }, []);
+
+  // Re-frame when sites are added or removed.
+  useEffect(() => {
+    if (mapRef.current) applyView(mapRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stops.length]);
 
   // Click to add — but only if the spot is on land (reject water).
   const handleClick = useCallback(
@@ -202,17 +225,41 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
   const onPlaceChanged = useCallback(() => {
     const place = acRef.current?.getPlace();
     const loc = place?.geometry?.location;
-    // Google fires this twice on Enter (a rough guess, then the exact place);
-    // require both geometry and a place_id, and ignore a repeat of the same id.
-    if (!loc || !place?.place_id) {
-      onWarn("Pick an address from the dropdown suggestions to add it.");
+
+    // Happy path: the user picked a suggestion — we get geometry + a place_id.
+    if (loc && place?.place_id) {
+      if (place.place_id === lastPlaceRef.current) return;
+      lastPlaceRef.current = place.place_id;
+      const name = place.name || place.formatted_address?.split(",")[0] || "New delivery site";
+      onAdd(loc.lat(), loc.lng(), name);
+      if (inputRef.current) inputRef.current.value = "";
       return;
     }
-    if (place.place_id === lastPlaceRef.current) return;
-    lastPlaceRef.current = place.place_id;
-    const name = place.name || place.formatted_address?.split(",")[0] || "New delivery site";
-    onAdd(loc.lat(), loc.lng(), name);
-    if (inputRef.current) inputRef.current.value = "";
+
+    // Fallback: the user typed an address and pressed Enter without choosing a
+    // suggestion — geocode the raw text so it still gets added.
+    const text = inputRef.current?.value?.trim();
+    if (!text) {
+      onWarn("Type an address, then pick a suggestion or press Enter.");
+      return;
+    }
+    if (text === lastPlaceRef.current) return; // ignore a repeat Enter on same text
+    lastPlaceRef.current = text;
+    if (!geocoderRef.current) geocoderRef.current = new google.maps.Geocoder();
+    geocoderRef.current.geocode(
+      { address: text, componentRestrictions: { country: "us" } },
+      (results, status) => {
+        if (status === "OK" && results && results[0]) {
+          const r = results[0];
+          const l = r.geometry.location;
+          const name = text.split(",")[0] || r.formatted_address?.split(",")[0] || "New delivery site";
+          onAdd(l.lat(), l.lng(), name);
+          if (inputRef.current) inputRef.current.value = "";
+        } else {
+          onWarn("Couldn't find that address. Add a city/state, or pick a dropdown suggestion.");
+        }
+      }
+    );
   }, [onAdd, onWarn]);
 
   return (
@@ -286,7 +333,7 @@ function MapInner({ stops, orderedStopIds, returnedToStart, onAdd, onWarn, servi
         )}
 
         {stops.map((s, i) => {
-          const isDepot = i === 0;
+          const isDepot = s.id === "depot";
           return (
             <Marker
               key={s.id}

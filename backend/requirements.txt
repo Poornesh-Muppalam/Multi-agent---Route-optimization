@@ -3,6 +3,7 @@ uvicorn[standard]==0.30.6
 ortools==9.12.4544
 pydantic==2.9.2
 anthropic>=0.40.0
+openai>=1.40.0
 langgraph>=0.2.0
 python-dotenv>=1.0.0
 scikit-learn>=1.4.0

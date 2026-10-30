@@ -9,6 +9,7 @@ and reliable.
 
 from __future__ import annotations
 
+import datetime
 import json
 import math
 import os
@@ -85,12 +86,19 @@ def build_time_matrix(stops: List[dict], speed_kmph: float) -> List[List[int]]:
     return matrix
 
 
+def _now_minutes() -> int:
+    """Current local wall-clock time as minutes from midnight."""
+    now = datetime.datetime.now()
+    return now.hour * 60 + now.minute
+
+
 def solve_route(
     stops: List[dict],
     return_to_start: bool = True,
     speed_kmph: float = 30.0,
     time_limit_seconds: int = 5,
     pins: Optional[List[dict]] = None,
+    depart_min: Optional[int] = None,
 ) -> dict:
     """Find the best order to visit every stop, starting from the first one.
 
@@ -104,6 +112,9 @@ def solve_route(
         the Phase 3 chat ("put the shelter first"). Honoured as a hard ordering
         constraint, so an impossible pin (against a time window) makes the run
         unsolvable, which the caller surfaces to the user.
+    depart_min: when the van leaves the depot, in minutes from midnight. Defaults
+        to the current local time, so ETAs reflect a real "leave now" departure.
+        A serving window whose latest time is already past becomes unreachable.
 
     Returns a plain dict that the API hands straight to the frontend.
     """
@@ -151,51 +162,62 @@ def solve_route(
 
     binding_rules: List[str] = []
 
-    # A Time dimension is needed for time windows and/or ordering pins.
-    if has_windows or has_pins:
-        horizon = 24 * 3600
-        routing.AddDimension(
-            transit_idx,
-            horizon,  # allow waiting before a window opens
-            horizon,  # max time per vehicle
-            False,  # do not force start cumul to zero
-            "Time",
-        )
-        time_dim = routing.GetDimensionOrDie("Time")
+    # The van leaves the depot at this wall-clock time (minutes from midnight);
+    # default to "now" so ETAs reflect a real, current departure rather than an
+    # arbitrary midnight start.
+    start_seconds = int(depart_min if depart_min is not None else _now_minutes()) * 60
 
-        if has_windows:
-            for node, stop in enumerate(stops):
-                window = stop.get("window")
-                if not window:
+    # A Time dimension always drives the schedule now: it fixes the departure,
+    # enforces any serving windows and ordering pins, and yields real ETAs.
+    # The capacity (max cumulative time) must cover the departure PLUS a long
+    # run, otherwise a late departure (e.g. 6:26 pm) leaves too little headroom
+    # before the cap and a valid run is wrongly rejected. Allow a full day of
+    # driving after departure.
+    day = 24 * 3600
+    routing.AddDimension(
+        transit_idx,
+        day,  # generous slack: waiting allowed before a window opens
+        start_seconds + day,  # max cumulative time = departure + up to 24h of run
+        False,  # do not force start cumul to zero (we set it explicitly below)
+        "Time",
+    )
+    time_dim = routing.GetDimensionOrDie("Time")
+    # Fix when the van pulls out of the food bank.
+    time_dim.CumulVar(routing.Start(0)).SetRange(start_seconds, start_seconds)
+
+    if has_windows:
+        for node, stop in enumerate(stops):
+            window = stop.get("window")
+            if not window:
+                continue
+            earliest = int(round(window[0] * 60))
+            latest = int(round(window[1] * 60))
+            index = manager.NodeToIndex(node)
+            time_dim.CumulVar(index).SetRange(earliest, latest)
+            binding_rules.append(
+                f"{stop['name']} must be reached between "
+                f"{_fmt(window[0])} and {_fmt(window[1])}."
+            )
+
+    if has_pins:
+        # Force a site first/last by constraining its arrival time relative
+        # to every other delivery, using the Time dimension's cumul vars.
+        solver = routing.solver()
+        delivery_nodes = [node for node in range(n) if node != depot]
+        for pin in pins:
+            pinned = manager.NodeToIndex(pin["node"])
+            for other in delivery_nodes:
+                if other == pin["node"]:
                     continue
-                earliest = int(round(window[0] * 60))
-                latest = int(round(window[1] * 60))
-                index = manager.NodeToIndex(node)
-                time_dim.CumulVar(index).SetRange(earliest, latest)
-                binding_rules.append(
-                    f"{stop['name']} must be reached between "
-                    f"{_fmt(window[0])} and {_fmt(window[1])}."
-                )
-
-        if has_pins:
-            # Force a site first/last by constraining its arrival time relative
-            # to every other delivery, using the Time dimension's cumul vars.
-            solver = routing.solver()
-            delivery_nodes = [node for node in range(n) if node != depot]
-            for pin in pins:
-                pinned = manager.NodeToIndex(pin["node"])
-                for other in delivery_nodes:
-                    if other == pin["node"]:
-                        continue
-                    other_idx = manager.NodeToIndex(other)
-                    if pin["pos"] == "first":
-                        solver.Add(time_dim.CumulVar(pinned) <= time_dim.CumulVar(other_idx))
-                    else:  # "last"
-                        solver.Add(time_dim.CumulVar(pinned) >= time_dim.CumulVar(other_idx))
-                binding_rules.append(
-                    f"{stops[pin['node']]['name']} is pinned to be visited "
-                    f"{pin['pos']}."
-                )
+                other_idx = manager.NodeToIndex(other)
+                if pin["pos"] == "first":
+                    solver.Add(time_dim.CumulVar(pinned) <= time_dim.CumulVar(other_idx))
+                else:  # "last"
+                    solver.Add(time_dim.CumulVar(pinned) >= time_dim.CumulVar(other_idx))
+            binding_rules.append(
+                f"{stops[pin['node']]['name']} is pinned to be visited "
+                f"{pin['pos']}."
+            )
 
     search = pywrapcp.DefaultRoutingSearchParameters()
     search.first_solution_strategy = (
@@ -246,12 +268,12 @@ def solve_route(
         total_distance += meters
         total_time += seconds
 
+    # Real ETAs at every stop, measured from the departure time.
     arrivals_min: List[int] = []
-    if has_windows:
-        time_dim = routing.GetDimensionOrDie("Time")
-        for node in order:
-            idx = manager.NodeToIndex(node)
-            arrivals_min.append(round(solution.Value(time_dim.CumulVar(idx)) / 60))
+    time_dim = routing.GetDimensionOrDie("Time")
+    for node in order:
+        idx = manager.NodeToIndex(node)
+        arrivals_min.append(round(solution.Value(time_dim.CumulVar(idx)) / 60))
 
     return {
         "ok": True,

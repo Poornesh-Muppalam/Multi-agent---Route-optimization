@@ -12,7 +12,7 @@ streams each agent's step live over Server-Sent Events for the activity panel.
 from __future__ import annotations
 
 import json
-from typing import AsyncIterator, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 # Load backend/.env (ANTHROPIC_API_KEY, ROUTEMIND_MODEL, OSRM_URL, ...) so the
 # app runs on Claude with a plain `uvicorn app:app` — no --env-file needed.
@@ -28,9 +28,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from agents import run_agents, stream_agents
-from chat import chat_turn
-from learning import model_summary, reset_history, unlearn
+from agents import brain_info, run_agents, stream_agents
+from chat import apply_turn, chat_turn
 from solver import solve_route
 
 app = FastAPI(title="RouteMind API", version="0.2.0")
@@ -60,19 +59,25 @@ class OptimizeRequest(BaseModel):
     stops: List[Stop]
     return_to_start: bool = True
     speed_kmph: float = 30.0
+    # When the van leaves the depot, in minutes from midnight. None → the solver
+    # uses the current local time ("leave now").
+    depart_min: Optional[int] = None
 
 
 class ChatRequest(OptimizeRequest):
     message: str
 
 
-class UnlearnRequest(BaseModel):
-    customer_id: str
+class ApplyRequest(OptimizeRequest):
+    # A structured edit decided by an external brain (e.g. the n8n workflow),
+    # shaped like chat.ACTION_SCHEMA. The backend applies it, re-solves, and
+    # explains the cost — the deterministic route math stays here.
+    action: Dict[str, Any]
 
 
 @app.get("/")
 def health():
-    return {"status": "ok", "service": "RouteMind API", "phase": 4}
+    return {"status": "ok", "service": "RouteMind API"}
 
 
 @app.post("/optimize")
@@ -82,6 +87,7 @@ def optimize(req: OptimizeRequest):
         stops,
         return_to_start=req.return_to_start,
         speed_kmph=req.speed_kmph,
+        depart_min=req.depart_min,
     )
     return result
 
@@ -91,7 +97,7 @@ async def optimize_agents(req: OptimizeRequest):
     """Run the whole agent crew once and return the final state, including the
     solver result and each agent's plain-English message."""
     stops = [stop.model_dump() for stop in req.stops]
-    return await run_agents(stops, req.return_to_start, req.speed_kmph)
+    return await run_agents(stops, req.return_to_start, req.speed_kmph, req.depart_min)
 
 
 @app.post("/optimize/agents/stream")
@@ -103,7 +109,7 @@ async def optimize_agents_stream(req: OptimizeRequest):
     async def event_source() -> AsyncIterator[bytes]:
         try:
             async for event in stream_agents(
-                stops, req.return_to_start, req.speed_kmph
+                stops, req.return_to_start, req.speed_kmph, req.depart_min
             ):
                 yield f"data: {json.dumps(event)}\n\n".encode()
         except Exception as exc:  # surface failures to the panel, don't hang
@@ -122,23 +128,18 @@ async def chat(req: ChatRequest):
     """Phase 3: interpret a plain-English change to the run, apply it, re-solve,
     and explain what changed and what it cost."""
     stops = [stop.model_dump() for stop in req.stops]
-    return await chat_turn(req.message, stops, req.return_to_start, req.speed_kmph)
+    return await chat_turn(req.message, stops, req.return_to_start, req.speed_kmph, req.depart_min)
 
 
-@app.get("/model")
-def model_status():
-    """Phase 4: the learned on-site service times per site vs the defaults,
-    trip counts, and the model's fit error."""
-    return model_summary()
+@app.get("/chat/info")
+def chat_info():
+    """Which brain powers the chat (Gemini / Groq / Claude / Ollama / Rules)."""
+    return brain_info()
 
 
-@app.post("/model/unlearn")
-def model_unlearn(req: UnlearnRequest):
-    """Phase 4: forget one site's trips and retrain (the right to be forgotten)."""
-    return unlearn(req.customer_id)
-
-
-@app.post("/model/reset")
-def model_reset():
-    """Regenerate the demo trip log and retrain."""
-    return reset_history()
+@app.post("/chat/apply")
+async def chat_apply(req: ApplyRequest):
+    """Apply a structured edit (decided elsewhere, e.g. the n8n chat brain), re-solve,
+    and explain the cost. Same response shape as /chat's edit path."""
+    stops = [stop.model_dump() for stop in req.stops]
+    return await apply_turn(req.action, stops, req.return_to_start, req.speed_kmph, req.depart_min)
