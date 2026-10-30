@@ -4,7 +4,8 @@
 
 You describe your stops and rules in plain English, Google OR-Tools does the optimization, and a crew of AI agents validates the plan, predicts conflicts, auto-repairs an impossible run, and explains every choice — live.
 
-> 🔗 **Live demo:** _<!-- paste your Vercel URL here once deployed, e.g. https://routemind.vercel.app -->_
+> 🔗 **Live demo:** **https://multi-agent-route-optimization.vercel.app**
+> _(The backend runs on Render's free tier and sleeps when idle — the very first request after a while can take ~30–60s to wake. Give it a moment on first load.)_
 >
 > 🧑‍💻 **Author:** Poornesh Muppalam · 👨‍🏫 **Professor:** Prashant Khanduri
 
